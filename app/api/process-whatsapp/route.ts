@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from '@/lib/supabase'
 
+export const dynamic = 'force-dynamic'
 export const maxDuration = 60 // Allow up to 60s for Claude API calls
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
