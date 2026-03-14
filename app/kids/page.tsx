@@ -313,9 +313,9 @@ export default function KidsSchedulePage() {
                           )}
                           {kidReminders.map(r => (
                             <li key={r.id} className="flex items-center gap-1.5 flex-row-reverse py-0.5">
-                              <input type="checkbox" checked={r.completed} onChange={() => toggleReminder(r)}
+                              <input type="checkbox" checked={false} onChange={() => deleteReminder(r.id)}
                                 className="w-3.5 h-3.5 flex-shrink-0 cursor-pointer" style={{ accentColor: kid.thBorder }} />
-                              <span className={`flex-1 text-xs text-right leading-snug ${r.completed ? 'line-through text-gray-300' : 'text-gray-700'}`}>
+                              <span className="flex-1 text-xs text-right leading-snug text-gray-700">
                                 {r.text}
                               </span>
                               <button onClick={() => deleteReminder(r.id)}
