@@ -110,7 +110,7 @@ const KIDS = [
 function KidAvatar({ kid, theme, onClick }: {
   kid: typeof KIDS[0]; theme: KidTheme; onClick: () => void
 }) {
-  const size = 72
+  const size = 160
   return (
     <button
       onClick={onClick}
