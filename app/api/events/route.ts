@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     completed, meeting_link
   } = body
 
-  const row = {
+  const baseRow = {
     person: person || null,
     title: title || null,
     date: date || null,
@@ -65,18 +65,24 @@ export async function POST(request: NextRequest) {
     notes: notes || null,
     is_recurring: is_recurring ?? false,
     recurrence_days: recurrence_days || null,
+  }
+
+  // Try with optional columns first, fall back to base row if columns don't exist yet
+  const fullRow = {
+    ...baseRow,
     completed: completed ?? false,
     meeting_link: meeting_link || null,
   }
 
-  const { data, error } = await supabase
-    .from('events')
-    .insert(row)
-    .select()
-    .single()
+  let result = await supabase.from('events').insert(fullRow).select().single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+  if (result.error && result.error.message.includes('column')) {
+    // Optional columns missing — retry with just the base columns
+    result = await supabase.from('events').insert(baseRow).select().single()
+  }
+
+  if (result.error) return NextResponse.json({ error: result.error.message }, { status: 500 })
+  return NextResponse.json(result.data)
 }
 
 export async function PATCH(request: NextRequest) {
