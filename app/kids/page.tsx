@@ -16,6 +16,7 @@ interface Event {
   is_recurring: boolean
   recurrence_days: string[] | null
   completed?: boolean
+  meeting_link?: string | null
 }
 
 interface Reminder {
@@ -346,6 +347,17 @@ function EventCell({ event, onToggleComplete }: { event: Event; onToggleComplete
           )}
           {event.location && !event.completed && (
             <div className="text-xs text-gray-400">📍 {event.location}</div>
+          )}
+          {event.meeting_link && !event.completed && (
+            <a
+              href={event.meeting_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 mt-0.5 font-medium"
+            >
+              🔗 כניסה לפגישה
+            </a>
           )}
         </div>
       </div>

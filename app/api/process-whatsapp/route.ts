@@ -29,9 +29,11 @@ Return ONLY a JSON array of events with this structure:
   "notes": "any extra context or null",
   "is_recurring": true/false,
   "recurrence_days": ["sunday","monday",...] or null,
+  "meeting_link": "full URL of Google Meet/Zoom/Teams link if present in the message, or null",
   "action": "add|cancel|update",
   "original_title": "only if action is update or cancel"
 }]
+Extract meeting links (meet.google.com, zoom.us, teams.microsoft.com, etc.) and attach them to the relevant event.
 Return only valid JSON, no explanation.`
 
   let message

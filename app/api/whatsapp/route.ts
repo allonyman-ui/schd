@@ -20,8 +20,10 @@ Return ONLY a JSON array of events with this structure:
   "location": "location or null",
   "notes": "any extra context or null",
   "is_recurring": false,
-  "recurrence_days": null
+  "recurrence_days": null,
+  "meeting_link": "full URL of Google Meet/Zoom/Teams link if present in the message, or null"
 }]
+Extract meeting links (meet.google.com, zoom.us, teams.microsoft.com, etc.) and attach them to the relevant event.
 Return only valid JSON, no explanation.`
 
 function twimlReply(message: string): NextResponse {
