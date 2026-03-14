@@ -43,6 +43,10 @@ export default function KidsSchedulePage() {
   const [loadingEvents, setLoadingEvents] = useState(true)
   const [loadingReminders, setLoadingReminders] = useState(true)
   const [addingReminder, setAddingReminder] = useState(false)
+  const [lunchMenu, setLunchMenu] = useState('')
+  const [lunchEdit, setLunchEdit] = useState(false)
+  const [lunchDraft, setLunchDraft] = useState('')
+  const [savingLunch, setSavingLunch] = useState(false)
 
   const dateStr = format(selectedDate, 'yyyy-MM-dd')
   const dayOfWeek = DAY_NAMES[selectedDate.getDay()]
@@ -67,10 +71,38 @@ export default function KidsSchedulePage() {
     }
   }, [dateStr])
 
+  const loadLunch = useCallback(async () => {
+    const res = await fetch(`/api/lunch?date=${dateStr}`)
+    if (res.ok) {
+      const data = await res.json()
+      setLunchMenu(data?.menu || '')
+      setLunchDraft(data?.menu || '')
+    } else {
+      setLunchMenu('')
+      setLunchDraft('')
+    }
+    setLunchEdit(false)
+  }, [dateStr])
+
   useEffect(() => {
     loadEvents()
     loadReminders()
-  }, [loadEvents, loadReminders])
+    loadLunch()
+  }, [loadEvents, loadReminders, loadLunch])
+
+  async function saveLunch() {
+    setSavingLunch(true)
+    const res = await fetch('/api/lunch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: dateStr, menu: lunchDraft }),
+    })
+    if (res.ok) {
+      setLunchMenu(lunchDraft)
+      setLunchEdit(false)
+    }
+    setSavingLunch(false)
+  }
 
   async function toggleEventComplete(event: Event) {
     const updated = { completed: !event.completed }
@@ -235,6 +267,58 @@ export default function KidsSchedulePage() {
               + הוסף
             </button>
           </div>
+        </div>
+
+        {/* Lunch menu */}
+        <div className="bg-gradient-to-l from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4 mb-5 no-print">
+          <div className="flex items-center justify-between flex-row-reverse mb-2">
+            <div className="flex items-center gap-2 flex-row-reverse">
+              <span className="text-xl">🍽️</span>
+              <h2 className="text-base font-bold text-orange-800">תפריט צהריים</h2>
+            </div>
+            {!lunchEdit && (
+              <button
+                onClick={() => { setLunchDraft(lunchMenu); setLunchEdit(true) }}
+                className="text-xs text-orange-500 hover:text-orange-700 font-semibold border border-orange-200 rounded-lg px-2 py-1 bg-white hover:bg-orange-50 transition"
+              >
+                ✏️ ערוך
+              </button>
+            )}
+          </div>
+
+          {lunchEdit ? (
+            <div className="space-y-2">
+              <textarea
+                value={lunchDraft}
+                onChange={e => setLunchDraft(e.target.value)}
+                placeholder={`לדוגמה:\n🍗 שניצל עם אורז\n🥗 סלט ירקות\n🍊 פרי`}
+                className="w-full border border-orange-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none h-24"
+                dir="rtl"
+                autoFocus
+              />
+              <div className="flex gap-2 flex-row-reverse">
+                <button
+                  onClick={saveLunch}
+                  disabled={savingLunch}
+                  className="bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition disabled:opacity-50"
+                >
+                  {savingLunch ? 'שומר...' : '💾 שמור'}
+                </button>
+                <button
+                  onClick={() => setLunchEdit(false)}
+                  className="text-gray-400 hover:text-gray-600 text-sm px-3 py-1.5 rounded-lg border border-gray-200 bg-white"
+                >
+                  ביטול
+                </button>
+              </div>
+            </div>
+          ) : lunchMenu ? (
+            <div className="text-sm text-orange-900 whitespace-pre-line leading-relaxed text-right">
+              {lunchMenu}
+            </div>
+          ) : (
+            <p className="text-sm text-orange-300 text-center py-2">לא הוזן תפריט להיום — לחץ ערוך להוספה</p>
+          )}
         </div>
 
         {/* Schedule columns */}
