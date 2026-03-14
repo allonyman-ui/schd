@@ -15,26 +15,55 @@ export async function POST(request: NextRequest) {
 
   const today = new Date().toISOString().split('T')[0]
 
-  const systemPrompt = `You are a schedule extraction assistant for an Israeli family. Parse the following WhatsApp messages and extract all schedule-related events.
-Family members: Alex (אלכס), Itan (איתן), Ami (אמי), Danil (דניאל), Assaf (אסף).
-Today's date: ${today}.
-Return ONLY a JSON array of events with this structure:
+  const systemPrompt = `You are a precise schedule extraction assistant for an Israeli family. Read the ENTIRE message carefully from start to finish before extracting.
+
+FAMILY MEMBERS (kids + parents):
+- alex / אלכס / אלכסנדר → "alex"
+- itan / איתן → "itan"
+- ami / אמי / עמי → "ami"
+- danil / דניאל / דני → "danil"
+- assaf / אסף → "assaf"
+
+TODAY'S DATE: ${today}
+
+INSTRUCTIONS — READ EVERY WORD:
+1. Extract EVERY scheduled event, appointment, activity, or task mentioned.
+2. Identify the person from context — e.g. "לאיתן יש...", "קבוצת כדורגל של אמי", "כיתה ד של אלכס".
+3. Parse ALL Hebrew date formats:
+   - "יום ראשון/שני/שלישי/רביעי/חמישי/שישי/שבת" → calculate the NEXT occurrence from today
+   - "ביום ג׳", "ביום ה׳" → Hebrew day abbreviations (א=ראשון, ב=שני, ג=שלישי, ד=רביעי, ה=חמישי, ו=שישי, ש=שבת)
+   - "21/3", "21.3", "21/03/2026", "21 למרץ" → parse to YYYY-MM-DD using current year if not specified
+   - "מחר" → tomorrow, "מחרתיים" → day after tomorrow, "השבוע" → infer day from context
+4. Parse ALL Hebrew time formats:
+   - "ב-16:00", "בשעה 16:00", "ב16:30", "ב4 אחרי הצהריים" (=16:00), "ב9 בבוקר" (=09:00)
+5. CAPTURE ALL DETAILS into the notes field — do NOT ignore anything:
+   - What to bring: "להביא ציוד", "להביא ספר X", "להביא כסף"
+   - What to wear: "ללבוש...", "לבוש ספורט"
+   - Preparation: "להכין", "לחזור על"
+   - Instructions: "לא לשכוח", "חשוב"
+   - Any other context from the message
+6. Extract the location if mentioned (school name, address, city, room number, online/Zoom).
+7. Extract meeting links: meet.google.com, zoom.us, teams.microsoft.com, etc.
+8. For RECURRING events (every week on same day): set is_recurring=true and recurrence_days.
+9. For cancelled events: action="cancel". For updates: action="update".
+10. If the person cannot be determined from the message, leave "person" as empty string "".
+11. If the date cannot be determined, leave "date" as empty string "".
+
+Return ONLY a valid JSON array, no explanation, no markdown:
 [{
-  "person": "alex|itan|ami|danil|assaf",
-  "title": "event name in Hebrew or as written",
-  "date": "YYYY-MM-DD",
+  "person": "alex|itan|ami|danil|assaf or empty string",
+  "title": "שם האירוע בעברית כפי שכתוב",
+  "date": "YYYY-MM-DD or empty string",
   "start_time": "HH:MM or null",
   "end_time": "HH:MM or null",
-  "location": "location or null",
-  "notes": "any extra context or null",
-  "is_recurring": true/false,
-  "recurrence_days": ["sunday","monday",...] or null,
-  "meeting_link": "full URL of Google Meet/Zoom/Teams link if present in the message, or null",
+  "location": "מיקום or null",
+  "notes": "כל הפרטים הנוספים: מה להביא, מה ללבוש, הנחיות, הערות חשובות — or null",
+  "is_recurring": true or false,
+  "recurrence_days": ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"] or null,
+  "meeting_link": "full URL or null",
   "action": "add|cancel|update",
-  "original_title": "only if action is update or cancel"
-}]
-Extract meeting links (meet.google.com, zoom.us, teams.microsoft.com, etc.) and attach them to the relevant event.
-Return only valid JSON, no explanation.`
+  "original_title": "only if action is update or cancel, otherwise null"
+}]`
 
   let message
   try {
