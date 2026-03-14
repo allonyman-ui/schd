@@ -318,9 +318,9 @@ export default function KidsSchedulePage() {
           body { background: white !important; }
           .no-print { display: none !important; }
           nav, header { display: none !important; }
-          .print-table { display: table !important; }
+          .print-table { display: block !important; }
           .screen-only { display: none !important; }
-          @page { size: A4 landscape; margin: 8mm; }
+          @page { size: A4 landscape; margin: 5mm; }
         }
         @media screen { .print-table { display: none; } }
       `}</style>
@@ -329,51 +329,72 @@ export default function KidsSchedulePage() {
           PRINT LAYOUT — hidden on screen, shown on print
       ══════════════════════════════════════════════════════════════════ */}
       <div className="print-table w-full">
-        <div style={{ fontFamily: 'Arial, sans-serif', direction: 'rtl' }}>
-          <div style={{ textAlign: 'center', marginBottom: 8, borderBottom: '2px solid #000', paddingBottom: 6 }}>
-            <strong style={{ fontSize: 18 }}>לו&quot;ז משפחת אלוני — {format(selectedDate, 'd.M.yyyy', { locale: he })}</strong>
-            <span style={{ marginRight: 12, fontSize: 12, color: '#555' }}>{dateLabel}</span>
-          </div>
-          {lunchMenu && (
-            <div style={{ marginBottom: 8, fontSize: 11, border: '1px solid #ccc', padding: '4px 8px', borderRadius: 4 }}>
-              <strong>🍽️ תפריט צהריים:</strong> {lunchMenu.replace(/\n/g, ' | ')}
+        <div style={{ fontFamily: 'Arial, sans-serif', direction: 'rtl', fontSize: 15 }}>
+
+          {/* Print header */}
+          <div style={{ textAlign: 'center', marginBottom: 6, borderBottom: '2.5px solid #000', paddingBottom: 5 }}>
+            <div style={{ fontSize: 24, fontWeight: 900 }}>
+              📅 לו&quot;ז משפחת אלוני — {format(selectedDate, 'd.M.yyyy', { locale: he })}
             </div>
-          )}
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-            <thead>
-              <tr>
-                {KIDS.map(kid => (
-                  <th key={kid.key} style={{ border: '1.5px solid #333', padding: '6px 8px', background: '#f0f0f0', textAlign: 'center', width: '33%' }}>
-                    {kid.name} — {getKidEvents(kid.key).length} פעילויות
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                {KIDS.map(kid => (
-                  <td key={kid.key} style={{ border: '1.5px solid #333', padding: '6px 8px', verticalAlign: 'top' }}>
-                    {getKidEvents(kid.key).length === 0 ? (
-                      <div style={{ color: '#aaa', textAlign: 'center' }}>—</div>
-                    ) : getKidEvents(kid.key).map(ev => (
-                      <div key={ev.id} style={{ marginBottom: 6, paddingBottom: 6, borderBottom: '1px dashed #ddd' }}>
-                        <div style={{ fontWeight: 'bold' }}>{ev.title}</div>
-                        {ev.start_time && <div style={{ fontSize: 10, color: '#444' }}>⏰ {ev.start_time.slice(0,5)}{ev.end_time ? `–${ev.end_time.slice(0,5)}` : ''}</div>}
-                        {ev.location && <div style={{ fontSize: 10 }}>📍 {ev.location}</div>}
-                        {ev.notes && <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>📝 {ev.notes}</div>}
+            <div style={{ fontSize: 14, color: '#444', marginTop: 2 }}>{dateLabel}</div>
+          </div>
+
+          {/* 3-column grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+            {KIDS.map(kid => {
+              const evs = getKidEvents(kid.key)
+              const remds = getKidReminders(kid.key)
+              return (
+                <div key={kid.key} style={{ border: '2px solid #222', borderRadius: 6, overflow: 'hidden' }}>
+                  {/* Column header */}
+                  <div style={{ background: '#222', color: '#fff', padding: '6px 10px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 20, fontWeight: 900 }}>{kid.name}</div>
+                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 1 }}>
+                      {evs.length === 0 ? 'יום חופשי' : `${evs.length} פעילויות`}
+                    </div>
+                  </div>
+
+                  {/* Events */}
+                  <div style={{ padding: '6px 8px', minHeight: 40 }}>
+                    {evs.length === 0 ? (
+                      <div style={{ color: '#bbb', textAlign: 'center', fontSize: 14, padding: '8px 0' }}>—</div>
+                    ) : evs.map((ev, i) => (
+                      <div key={ev.id} style={{
+                        marginBottom: i < evs.length-1 ? 7 : 0,
+                        paddingBottom: i < evs.length-1 ? 7 : 0,
+                        borderBottom: i < evs.length-1 ? '1px dashed #ccc' : 'none'
+                      }}>
+                        <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2 }}>{ev.title}</div>
+                        {ev.start_time && (
+                          <div style={{ fontSize: 13, color: '#333', marginTop: 2 }} dir="ltr">
+                            ⏰ {ev.start_time.slice(0,5)}{ev.end_time ? `–${ev.end_time.slice(0,5)}` : ''}
+                          </div>
+                        )}
+                        {ev.location && (
+                          <div style={{ fontSize: 13, color: '#333', marginTop: 1 }}>📍 {ev.location}</div>
+                        )}
+                        {ev.notes && (
+                          <div style={{ fontSize: 12, color: '#555', marginTop: 2, background: '#f5f5f5', padding: '2px 5px', borderRadius: 3 }}>
+                            📝 {ev.notes}
+                          </div>
+                        )}
                       </div>
                     ))}
-                    {getKidReminders(kid.key).length > 0 && (
-                      <div style={{ marginTop: 8, paddingTop: 4, borderTop: '1px solid #ccc' }}>
-                        <div style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 2 }}>📌 תזכורות:</div>
-                        {getKidReminders(kid.key).map(r => <div key={r.id} style={{ fontSize: 10 }}>• {r.text}</div>)}
-                      </div>
-                    )}
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
+                  </div>
+
+                  {/* Reminders */}
+                  {remds.length > 0 && (
+                    <div style={{ borderTop: '1.5px solid #ccc', padding: '5px 8px', background: '#fafafa' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 3 }}>📌 תזכורות:</div>
+                      {remds.map(r => (
+                        <div key={r.id} style={{ fontSize: 13, marginBottom: 1 }}>• {r.text}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       </div>
 
