@@ -1,8 +1,27 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ExtractedEvent, FAMILY_MEMBERS, getMemberInfo } from '@/lib/types'
 import PersonBadge from '@/components/PersonBadge'
+import { FAMILY_MEMBERS } from '@/lib/types'
+
+const PERSON_OPTIONS = ['alex', 'itan', 'ami', 'danil', 'assaf']
+const PERSON_LABELS: Record<string, string> = {
+  alex: 'אלכס', itan: 'איתן', ami: 'אמי', danil: 'דניאל', assaf: 'אסף'
+}
+
+interface ExtractedEvent {
+  person: string
+  title: string
+  date: string
+  start_time: string | null
+  end_time: string | null
+  location: string | null
+  notes: string | null
+  is_recurring: boolean
+  recurrence_days: string[] | null
+  action?: string
+  original_title?: string
+}
 
 interface BatchHistory {
   id: string
@@ -13,31 +32,25 @@ interface BatchHistory {
 
 export default function InboxPage() {
   const [rawText, setRawText] = useState('')
-  const [extractedEvents, setExtractedEvents] = useState<ExtractedEvent[]>([])
-  const [selectedEvents, setSelectedEvents] = useState<Set<number>>(new Set())
   const [processing, setProcessing] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const [incompleteEvents, setIncompleteEvents] = useState<ExtractedEvent[]>([])
   const [history, setHistory] = useState<BatchHistory[]>([])
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-  const [step, setStep] = useState<'input' | 'review'>('input')
+  const [successMsg, setSuccessMsg] = useState('')
 
-  useEffect(() => {
-    fetchHistory()
-  }, [])
+  useEffect(() => { fetchHistory() }, [])
 
   async function fetchHistory() {
     const res = await fetch('/api/process-whatsapp')
-    if (res.ok) {
-      const data = await res.json()
-      setHistory(data)
-    }
+    if (res.ok) setHistory(await res.json())
   }
 
   async function handleProcess() {
     if (!rawText.trim()) return
     setProcessing(true)
     setError('')
+    setSuccessMsg('')
+    setIncompleteEvents([])
 
     try {
       const res = await fetch('/api/process-whatsapp', {
@@ -49,221 +62,154 @@ export default function InboxPage() {
       let data
       try { data = await res.json() } catch { data = null }
       if (!res.ok) {
-        setError(data?.error || `שגיאת שרת ${res.status} — בדוק שה-ANTHROPIC_API_KEY מוגדר ב-Vercel`)
+        setError(data?.error || `שגיאת שרת ${res.status}`)
         return
       }
 
-      setExtractedEvents(data.events)
-      setSelectedEvents(new Set(data.events.map((_: ExtractedEvent, i: number) => i)))
-      setStep('review')
+      const events: ExtractedEvent[] = data.events || []
+
+      // Split into complete and incomplete
+      const complete = events.filter(e => e.person && e.date && (!e.action || e.action === 'add'))
+      const incomplete = events.filter(e => !e.person || !e.date)
+
+      // Auto-save complete events
+      let savedCount = 0
+      for (const ev of complete) {
+        const r = await fetch('/api/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...ev, source: 'whatsapp' }),
+        })
+        if (r.ok) savedCount++
+      }
+
+      if (savedCount > 0) {
+        setSuccessMsg(`✅ נשמרו ${savedCount} אירועים אוטומטית`)
+        setRawText('')
+        fetchHistory()
+      }
+
+      if (incomplete.length > 0) {
+        setIncompleteEvents(incomplete)
+      }
+
+      if (savedCount === 0 && incomplete.length === 0) {
+        setSuccessMsg('לא נמצאו אירועים בהודעה')
+      }
     } catch (err) {
       setError('שגיאת רשת — ודא שהאפליקציה פרוסה ונסה שוב')
-      console.error('Process error:', err)
+      console.error(err)
     } finally {
       setProcessing(false)
     }
   }
 
-  async function handleSave() {
-    setSaving(true)
-    setError('')
-
-    const eventsToSave = extractedEvents
-      .filter((_, i) => selectedEvents.has(i))
-      .filter(e => !e.action || e.action === 'add')
-      .map(e => ({
-        title: e.title,
-        person: e.person,
-        date: e.date,
-        start_time: e.start_time,
-        end_time: e.end_time,
-        location: e.location,
-        notes: e.notes,
-        is_recurring: e.is_recurring,
-        recurrence_days: e.recurrence_days,
-        source: 'whatsapp',
-      }))
-
-    const results = await Promise.all(
-      eventsToSave.map(event =>
-        fetch('/api/events', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(event),
-        })
-      )
-    )
-
-    const failed = results.filter(r => !r.ok).length
-    if (failed > 0) {
-      setError(`נכשל לשמור ${failed} אירועים`)
-    } else {
-      setSuccess(`${eventsToSave.length} אירועים נשמרו בהצלחה!`)
-      setRawText('')
-      setExtractedEvents([])
-      setStep('input')
+  async function saveIncomplete() {
+    let savedCount = 0
+    for (const ev of incompleteEvents) {
+      if (!ev.person || !ev.date) continue
+      const r = await fetch('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...ev, source: 'whatsapp' }),
+      })
+      if (r.ok) savedCount++
+    }
+    if (savedCount > 0) {
+      setSuccessMsg(prev => prev + ` + עוד ${savedCount} אירועים`)
+      setIncompleteEvents([])
       fetchHistory()
     }
-    setSaving(false)
   }
 
-  function toggleEvent(index: number) {
-    const next = new Set(selectedEvents)
-    if (next.has(index)) next.delete(index)
-    else next.add(index)
-    setSelectedEvents(next)
+  function updateIncomplete(idx: number, field: string, value: string) {
+    setIncompleteEvents(prev => prev.map((e, i) => i === idx ? { ...e, [field]: value } : e))
   }
 
-  function updateEvent(index: number, field: keyof ExtractedEvent, value: string) {
-    const updated = [...extractedEvents]
-    updated[index] = { ...updated[index], [field]: value }
-    setExtractedEvents(updated)
-  }
+  const allIncompleteReady = incompleteEvents.length > 0 && incompleteEvents.every(e => e.person && e.date)
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">📱 תיבת הודעות וואטסאפ</h1>
+    <div className="max-w-2xl mx-auto px-3">
+      <h1 className="text-xl font-bold text-gray-800 mb-5 text-right">📥 הכנסת מידע</h1>
 
-      {success && (
-        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl text-green-800">
-          {success}
+      {/* Success */}
+      {successMsg && (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-xl text-green-800 text-sm text-right">
+          {successMsg}
         </div>
       )}
 
-      {step === 'input' && (
-        <div className="bg-white rounded-2xl shadow-sm p-6 mb-8">
-          <h2 className="text-lg font-semibold text-gray-700 mb-3">הדבק הודעות וואטסאפ</h2>
-          <textarea
-            value={rawText}
-            onChange={e => setRawText(e.target.value)}
-            className="w-full border border-gray-200 rounded-xl p-4 text-sm h-48 resize-none focus:outline-none focus:ring-2 focus:ring-amber-400 direction-rtl"
-            placeholder="הדבק כאן את ההודעות מהוואטסאפ...
-
-לדוגמה:
-אלכס יש לו אימון כדורסל ביום שלישי ב-17:00
-Ami - swimming canceled this week
-הסעה לאיתן ביום ראשון ב-15:30"
-            dir="rtl"
-          />
-          {error && (
-            <p className="text-red-500 text-sm mt-2">{error}</p>
-          )}
-          <div className="flex justify-end mt-4">
-            <button
-              onClick={handleProcess}
-              disabled={processing || !rawText.trim()}
-              className="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-6 py-2 rounded-xl transition disabled:opacity-50 flex items-center gap-2"
-            >
-              {processing ? (
-                <>
-                  <span className="animate-spin">⏳</span>
-                  מעבד...
-                </>
-              ) : (
-                <>עבד הודעות</>
-              )}
-            </button>
-          </div>
+      {/* Input */}
+      <div className="bg-white rounded-2xl shadow-sm p-5 mb-6">
+        <h2 className="text-base font-semibold text-gray-700 mb-3 text-right">הדבק הודעות וואטסאפ</h2>
+        <textarea
+          value={rawText}
+          onChange={e => setRawText(e.target.value)}
+          className="w-full border border-gray-200 rounded-xl p-3 text-sm h-36 resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
+          placeholder="הדבק כאן את ההודעות מהוואטסאפ..."
+          dir="rtl"
+        />
+        {error && <p className="text-red-500 text-sm mt-2 text-right">{error}</p>}
+        <div className="flex justify-start mt-3">
+          <button
+            onClick={handleProcess}
+            disabled={processing || !rawText.trim()}
+            className="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-5 py-2 rounded-xl transition disabled:opacity-50 flex items-center gap-2"
+          >
+            {processing ? <><span className="animate-spin inline-block">⏳</span> מעבד...</> : 'עבד ושמור'}
+          </button>
         </div>
-      )}
+      </div>
 
-      {step === 'review' && extractedEvents.length > 0 && (
-        <div className="bg-white rounded-2xl shadow-sm p-6 mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-700">
-              אירועים שזוהו ({extractedEvents.length})
-            </h2>
-            <button
-              onClick={() => { setStep('input'); setExtractedEvents([]) }}
-              className="text-sm text-gray-400 hover:text-gray-600"
-            >
-              חזור
-            </button>
-          </div>
-
-          <div className="space-y-3 mb-6">
-            {extractedEvents.map((event, i) => {
-              const member = getMemberInfo(event.person)
-              const isSelected = selectedEvents.has(i)
-
-              return (
-                <div
-                  key={i}
-                  className={`border rounded-xl p-4 transition cursor-pointer ${
-                    isSelected ? `border-${member.color}-300 ${member.bgColor}` : 'border-gray-200 bg-gray-50 opacity-60'
-                  }`}
-                  onClick={() => toggleEvent(i)}
-                >
-                  <div className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleEvent(i)}
-                      className="mt-1 flex-shrink-0"
-                      onClick={e => e.stopPropagation()}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <PersonBadge name={event.person} />
-                        {event.action === 'cancel' && (
-                          <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">ביטול</span>
-                        )}
-                        {event.action === 'update' && (
-                          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">עדכון</span>
-                        )}
-                        {event.is_recurring && (
-                          <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">🔄 חוזר</span>
-                        )}
-                      </div>
-
-                      <input
-                        type="text"
-                        value={event.title}
-                        onChange={e => updateEvent(i, 'title', e.target.value)}
-                        className="w-full font-medium text-gray-800 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-amber-400 focus:outline-none mb-1"
-                        onClick={e => e.stopPropagation()}
+      {/* Missing info form */}
+      {incompleteEvents.length > 0 && (
+        <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 mb-6">
+          <h2 className="text-base font-semibold text-orange-800 mb-4 text-right">
+            ⚠️ חסר מידע — יש להשלים ({incompleteEvents.length} אירועים)
+          </h2>
+          <div className="space-y-4">
+            {incompleteEvents.map((ev, i) => (
+              <div key={i} className="bg-white rounded-xl p-4 border border-orange-100">
+                <div className="font-semibold text-gray-800 text-right mb-3">{ev.title}</div>
+                <div className="flex gap-3 flex-row-reverse flex-wrap">
+                  {!ev.person && (
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-gray-500 text-right">ילד/ה *</label>
+                      <select
+                        value={ev.person || ''}
+                        onChange={e => updateIncomplete(i, 'person', e.target.value)}
+                        className="border border-orange-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
                         dir="rtl"
-                      />
-
-                      <div className="flex gap-3 text-sm text-gray-600 flex-wrap">
-                        <span>📅 {event.date}</span>
-                        {event.start_time && (
-                          <span>🕐 {event.start_time}{event.end_time ? ` - ${event.end_time}` : ''}</span>
-                        )}
-                        {event.location && <span>📍 {event.location}</span>}
-                      </div>
-
-                      {event.notes && (
-                        <p className="text-xs text-gray-400 mt-1">{event.notes}</p>
-                      )}
+                      >
+                        <option value="">בחר...</option>
+                        {PERSON_OPTIONS.map(p => (
+                          <option key={p} value={p}>{PERSON_LABELS[p]}</option>
+                        ))}
+                      </select>
                     </div>
-                  </div>
+                  )}
+                  {!ev.date && (
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-gray-500 text-right">תאריך *</label>
+                      <input
+                        type="date"
+                        value={ev.date || ''}
+                        onChange={e => updateIncomplete(i, 'date', e.target.value)}
+                        className="border border-orange-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                  )}
                 </div>
-              )
-            })}
+              </div>
+            ))}
           </div>
-
-          {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-
-          <div className="flex gap-3 justify-end">
+          <div className="flex justify-start mt-4">
             <button
-              onClick={() => setSelectedEvents(new Set(extractedEvents.map((_, i) => i)))}
-              className="text-sm text-gray-500 hover:text-gray-700"
+              onClick={saveIncomplete}
+              disabled={!allIncompleteReady}
+              className="bg-green-500 hover:bg-green-600 text-white font-semibold px-5 py-2 rounded-xl transition disabled:opacity-50"
             >
-              בחר הכל
-            </button>
-            <button
-              onClick={() => setSelectedEvents(new Set())}
-              className="text-sm text-gray-500 hover:text-gray-700"
-            >
-              בטל הכל
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving || selectedEvents.size === 0}
-              className="bg-green-500 hover:bg-green-600 text-white font-semibold px-6 py-2 rounded-xl transition disabled:opacity-50"
-            >
-              {saving ? 'שומר...' : `שמור ${selectedEvents.size} אירועים`}
+              שמור אירועים חסרים
             </button>
           </div>
         </div>
@@ -271,12 +217,12 @@ Ami - swimming canceled this week
 
       {/* History */}
       {history.length > 0 && (
-        <div className="bg-white rounded-2xl shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-700 mb-4">היסטוריה</h2>
+        <div className="bg-white rounded-2xl shadow-sm p-5">
+          <h2 className="text-base font-semibold text-gray-700 mb-4 text-right">היסטוריה</h2>
           <div className="space-y-3">
             {history.map(batch => (
-              <div key={batch.id} className="border border-gray-100 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
+              <div key={batch.id} className="border border-gray-100 rounded-xl p-3">
+                <div className="flex items-center justify-between mb-1 flex-row-reverse">
                   <span className="text-xs text-gray-400">
                     {new Date(batch.created_at).toLocaleString('he-IL')}
                   </span>

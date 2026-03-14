@@ -29,7 +29,7 @@ export default function NavBar() {
                 pathname === '/inbox' ? 'bg-green-100 text-green-800' : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
-              📱 וואטסאפ
+              📥 הכנס מידע
             </Link>
           </div>
 
