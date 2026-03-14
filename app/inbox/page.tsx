@@ -46,9 +46,10 @@ export default function InboxPage() {
         body: JSON.stringify({ rawText }),
       })
 
-      const data = await res.json()
+      let data
+      try { data = await res.json() } catch { data = null }
       if (!res.ok) {
-        setError(data.error || 'שגיאה בעיבוד ההודעות')
+        setError(data?.error || `שגיאת שרת ${res.status} — בדוק שה-ANTHROPIC_API_KEY מוגדר ב-Vercel`)
         return
       }
 
@@ -56,7 +57,7 @@ export default function InboxPage() {
       setSelectedEvents(new Set(data.events.map((_: ExtractedEvent, i: number) => i)))
       setStep('review')
     } catch (err) {
-      setError('שגיאת רשת — נסה שוב בעוד רגע')
+      setError('שגיאת רשת — ודא שהאפליקציה פרוסה ונסה שוב')
       console.error('Process error:', err)
     } finally {
       setProcessing(false)

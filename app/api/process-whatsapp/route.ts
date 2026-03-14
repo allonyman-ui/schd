@@ -34,21 +34,23 @@ Return ONLY a JSON array of events with this structure:
 }]
 Return only valid JSON, no explanation.`
 
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 2048,
-    messages: [
-      {
-        role: 'user',
-        content: rawText,
-      },
-    ],
-    system: systemPrompt,
-  })
+  let message
+  try {
+    message = await anthropic.messages.create({
+      model: 'claude-opus-4-5',
+      max_tokens: 2048,
+      messages: [{ role: 'user', content: rawText }],
+      system: systemPrompt,
+    })
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('Anthropic API error:', msg)
+    return NextResponse.json({ error: `Claude API error: ${msg}` }, { status: 500 })
+  }
 
   const content = message.content[0]
   if (content.type !== 'text') {
-    return NextResponse.json({ error: 'Unexpected response' }, { status: 500 })
+    return NextResponse.json({ error: 'Unexpected response type from Claude' }, { status: 500 })
   }
 
   let events
