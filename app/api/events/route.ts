@@ -48,9 +48,30 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const supabase = createServiceClient()
 
+  // Only pass known columns — strip extra fields like action/original_title/source
+  const {
+    person, title, date, start_time, end_time,
+    location, notes, is_recurring, recurrence_days,
+    completed, meeting_link
+  } = body
+
+  const row = {
+    person: person || null,
+    title: title || null,
+    date: date || null,
+    start_time: start_time || null,
+    end_time: end_time || null,
+    location: location || null,
+    notes: notes || null,
+    is_recurring: is_recurring ?? false,
+    recurrence_days: recurrence_days || null,
+    completed: completed ?? false,
+    meeting_link: meeting_link || null,
+  }
+
   const { data, error } = await supabase
     .from('events')
-    .insert(body)
+    .insert(row)
     .select()
     .single()
 
