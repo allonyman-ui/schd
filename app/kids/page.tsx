@@ -287,7 +287,7 @@ export default function KidsSchedulePage() {
     const res = await fetch('/api/reminders', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ date: dateStr, person, text, completed: false }) })
-    if (res.ok) { setReminders(prev => [...prev, await res.json()]); setNewReminder(prev=>({...prev,[person]:''})) }
+    if (res.ok) { const data = await res.json(); setReminders(prev => [...prev, data]); setNewReminder(prev=>({...prev,[person]:''})) }
   }
 
   async function deleteReminder(id: string) {
