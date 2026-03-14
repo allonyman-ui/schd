@@ -6,9 +6,11 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const date = searchParams.get('date')
+  const person = searchParams.get('person')
   const supabase = createServiceClient()
   let query = supabase.from('reminders').select('*').order('created_at')
   if (date) query = query.eq('date', date)
+  if (person) query = query.eq('person', person)
   const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data)

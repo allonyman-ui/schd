@@ -22,6 +22,7 @@ interface Event {
 interface Reminder {
   id: string
   date: string
+  person: string | null
   text: string
   completed: boolean
   created_at: string
@@ -39,10 +40,9 @@ export default function KidsSchedulePage() {
   const [selectedDate, setSelectedDate] = useState(() => new Date())
   const [events, setEvents] = useState<Event[]>([])
   const [reminders, setReminders] = useState<Reminder[]>([])
-  const [newReminder, setNewReminder] = useState('')
+  const [newReminder, setNewReminder] = useState<Record<string, string>>({ ami: '', alex: '', itan: '' })
   const [loadingEvents, setLoadingEvents] = useState(true)
   const [loadingReminders, setLoadingReminders] = useState(true)
-  const [addingReminder, setAddingReminder] = useState(false)
   const [lunchMenu, setLunchMenu] = useState('')
   const [lunchEdit, setLunchEdit] = useState(false)
   const [lunchDraft, setLunchDraft] = useState('')
@@ -97,16 +97,12 @@ export default function KidsSchedulePage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date: dateStr, menu: lunchDraft }),
     })
-    if (res.ok) {
-      setLunchMenu(lunchDraft)
-      setLunchEdit(false)
-    }
+    if (res.ok) { setLunchMenu(lunchDraft); setLunchEdit(false) }
     setSavingLunch(false)
   }
 
   async function toggleEventComplete(event: Event) {
     const updated = { completed: !event.completed }
-    // Optimistic update
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, ...updated } : e))
     await fetch(`/api/events?id=${event.id}`, {
       method: 'PATCH',
@@ -115,20 +111,24 @@ export default function KidsSchedulePage() {
     })
   }
 
-  async function addReminder() {
-    if (!newReminder.trim()) return
-    setAddingReminder(true)
+  async function deleteEvent(id: string) {
+    setEvents(prev => prev.filter(e => e.id !== id))
+    await fetch(`/api/events?id=${id}`, { method: 'DELETE' })
+  }
+
+  async function addReminder(person: string) {
+    const text = newReminder[person]?.trim()
+    if (!text) return
     const res = await fetch('/api/reminders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: dateStr, text: newReminder.trim(), completed: false }),
+      body: JSON.stringify({ date: dateStr, person, text, completed: false }),
     })
     if (res.ok) {
       const data = await res.json()
       setReminders(prev => [...prev, data])
-      setNewReminder('')
+      setNewReminder(prev => ({ ...prev, [person]: '' }))
     }
-    setAddingReminder(false)
   }
 
   async function toggleReminder(reminder: Reminder) {
@@ -156,26 +156,18 @@ export default function KidsSchedulePage() {
       .sort((a, b) => (a.start_time ?? '').localeCompare(b.start_time ?? ''))
   }
 
+  function getKidReminders(kidKey: string): Reminder[] {
+    // show reminders assigned to this kid, or legacy reminders with no person assigned
+    return reminders.filter(r => r.person === kidKey || (!r.person && r.date === dateStr))
+  }
+
   const kidEvents = {
     ami: getKidEvents('ami'),
     alex: getKidEvents('alex'),
     itan: getKidEvents('itan'),
   }
 
-  const allTimedSlots = Array.from(new Set(
-    [...kidEvents.ami, ...kidEvents.alex, ...kidEvents.itan]
-      .filter(e => e.start_time)
-      .map(e => e.start_time!)
-  )).sort()
-
-  const allDayEvents = {
-    ami:  kidEvents.ami.filter(e => !e.start_time),
-    alex: kidEvents.alex.filter(e => !e.start_time),
-    itan: kidEvents.itan.filter(e => !e.start_time),
-  }
-  const hasAllDay = allDayEvents.ami.length + allDayEvents.alex.length + allDayEvents.itan.length > 0
   const totalEvents = kidEvents.ami.length + kidEvents.alex.length + kidEvents.itan.length
-
   const dateLabel = format(selectedDate, 'EEEE, d בMMMM yyyy', { locale: he })
 
   return (
@@ -220,55 +212,6 @@ export default function KidsSchedulePage() {
           <p className="text-sm text-gray-500 mt-0.5">{dateLabel}</p>
         </div>
 
-        {/* Reminders section */}
-        <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-4 mb-5 no-print">
-          <h2 className="text-base font-bold text-yellow-800 mb-3 flex items-center gap-2 flex-row-reverse justify-end">
-            <span>📌 תזכורות להיום</span>
-            {!loadingReminders && reminders.length > 0 && (
-              <span className="text-xs bg-yellow-200 text-yellow-800 rounded-full px-2 py-0.5">{reminders.length}</span>
-            )}
-          </h2>
-
-          {/* Reminder list */}
-          {loadingReminders ? (
-            <p className="text-sm text-yellow-600 text-center py-1">טוען...</p>
-          ) : (
-            <ul className="space-y-2 mb-3">
-              {reminders.length === 0 && (
-                <li className="text-sm text-yellow-500 text-center py-1">אין תזכורות להיום</li>
-              )}
-              {reminders.map(r => (
-                <li key={r.id} className="flex items-center gap-2 flex-row-reverse">
-                  <input type="checkbox" checked={r.completed} onChange={() => toggleReminder(r)}
-                    className="w-4 h-4 accent-amber-500 flex-shrink-0" />
-                  <span className={`flex-1 text-sm text-right ${r.completed ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-                    {r.text}
-                  </span>
-                  <button onClick={() => deleteReminder(r.id)}
-                    className="text-gray-300 hover:text-red-400 transition text-base leading-none flex-shrink-0">×</button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {/* Add reminder */}
-          <div className="flex gap-2 flex-row-reverse">
-            <input
-              type="text"
-              value={newReminder}
-              onChange={e => setNewReminder(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addReminder()}
-              placeholder="הוסף תזכורת..."
-              dir="rtl"
-              className="flex-1 border border-yellow-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
-            />
-            <button onClick={addReminder} disabled={addingReminder || !newReminder.trim()}
-              className="bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition disabled:opacity-50 whitespace-nowrap">
-              + הוסף
-            </button>
-          </div>
-        </div>
-
         {/* Lunch menu */}
         <div className="bg-gradient-to-l from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4 mb-5 no-print">
           <div className="flex items-center justify-between flex-row-reverse mb-2">
@@ -280,12 +223,9 @@ export default function KidsSchedulePage() {
               <button
                 onClick={() => { setLunchDraft(lunchMenu); setLunchEdit(true) }}
                 className="text-xs text-orange-500 hover:text-orange-700 font-semibold border border-orange-200 rounded-lg px-2 py-1 bg-white hover:bg-orange-50 transition"
-              >
-                ✏️ ערוך
-              </button>
+              >✏️ ערוך</button>
             )}
           </div>
-
           {lunchEdit ? (
             <div className="space-y-2">
               <textarea
@@ -293,48 +233,37 @@ export default function KidsSchedulePage() {
                 onChange={e => setLunchDraft(e.target.value)}
                 placeholder={`לדוגמה:\n🍗 שניצל עם אורז\n🥗 סלט ירקות\n🍊 פרי`}
                 className="w-full border border-orange-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none h-24"
-                dir="rtl"
-                autoFocus
+                dir="rtl" autoFocus
               />
               <div className="flex gap-2 flex-row-reverse">
-                <button
-                  onClick={saveLunch}
-                  disabled={savingLunch}
-                  className="bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition disabled:opacity-50"
-                >
+                <button onClick={saveLunch} disabled={savingLunch}
+                  className="bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition disabled:opacity-50">
                   {savingLunch ? 'שומר...' : '💾 שמור'}
                 </button>
-                <button
-                  onClick={() => setLunchEdit(false)}
-                  className="text-gray-400 hover:text-gray-600 text-sm px-3 py-1.5 rounded-lg border border-gray-200 bg-white"
-                >
+                <button onClick={() => setLunchEdit(false)}
+                  className="text-gray-400 hover:text-gray-600 text-sm px-3 py-1.5 rounded-lg border border-gray-200 bg-white">
                   ביטול
                 </button>
               </div>
             </div>
           ) : lunchMenu ? (
-            <div className="text-sm text-orange-900 whitespace-pre-line leading-relaxed text-right">
-              {lunchMenu}
-            </div>
+            <div className="text-sm text-orange-900 whitespace-pre-line leading-relaxed text-right">{lunchMenu}</div>
           ) : (
             <p className="text-sm text-orange-300 text-center py-2">לא הוזן תפריט להיום — לחץ ערוך להוספה</p>
           )}
         </div>
 
-        {/* Schedule columns */}
+        {/* Per-kid columns */}
         {loadingEvents ? (
           <div className="text-center py-12 text-gray-400 text-lg">טוען לוח זמנים...</div>
-        ) : totalEvents === 0 ? (
-          <div className="text-center py-12 text-gray-400">
-            <p className="text-4xl mb-3">📭</p>
-            <p className="text-lg font-semibold">אין אירועים ביום זה</p>
-          </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {KIDS.map(kid => {
               const evs = kidEvents[kid.key as keyof typeof kidEvents]
+              const kidReminders = getKidReminders(kid.key)
               return (
-                <div key={kid.key} className="rounded-2xl overflow-hidden shadow-sm border border-gray-100">
+                <div key={kid.key} className="rounded-2xl overflow-hidden shadow-sm border border-gray-100 flex flex-col">
+
                   {/* Kid header */}
                   <div className="px-4 py-3 flex items-center gap-2 flex-row-reverse"
                     style={{ background: kid.thBg, borderBottom: `2px solid ${kid.thBorder}` }}>
@@ -346,17 +275,87 @@ export default function KidsSchedulePage() {
                       </div>
                     </div>
                   </div>
+
                   {/* Events */}
-                  <div className="bg-white divide-y divide-gray-50">
+                  <div className="bg-white divide-y divide-gray-50 flex-1">
                     {evs.length === 0 ? (
-                      <div className="py-8 text-center text-gray-300 text-sm">—</div>
+                      <div className="py-6 text-center text-gray-300 text-sm">אין אירועים</div>
                     ) : evs.map(ev => (
-                      <EventCard key={ev.id} event={ev} onToggleComplete={toggleEventComplete} accentColor={kid.thBorder} />
+                      <EventCard
+                        key={ev.id}
+                        event={ev}
+                        onToggleComplete={toggleEventComplete}
+                        onDelete={deleteEvent}
+                        accentColor={kid.thBorder}
+                      />
                     ))}
                   </div>
+
+                  {/* Reminders for this kid */}
+                  <div className="border-t-2 border-dashed" style={{ borderColor: kid.thBorder + '55' }}>
+                    <div className="px-3 pt-2 pb-1 flex items-center gap-1.5 flex-row-reverse"
+                      style={{ background: kid.thBg + 'aa' }}>
+                      <span className="text-sm">📌</span>
+                      <span className="text-xs font-bold" style={{ color: kid.thColor }}>תזכורות</span>
+                      {!loadingReminders && kidReminders.length > 0 && (
+                        <span className="text-xs rounded-full px-1.5 py-0.5 font-bold"
+                          style={{ background: kid.thBorder, color: '#fff' }}>
+                          {kidReminders.filter(r => !r.completed).length}
+                        </span>
+                      )}
+                    </div>
+
+                    {loadingReminders ? null : (
+                      <div className="bg-white px-3 pb-2">
+                        <ul className="space-y-1 mb-2">
+                          {kidReminders.length === 0 && (
+                            <li className="text-xs text-gray-300 text-center py-1">אין תזכורות</li>
+                          )}
+                          {kidReminders.map(r => (
+                            <li key={r.id} className="flex items-center gap-1.5 flex-row-reverse py-0.5">
+                              <input type="checkbox" checked={r.completed} onChange={() => toggleReminder(r)}
+                                className="w-3.5 h-3.5 flex-shrink-0 cursor-pointer" style={{ accentColor: kid.thBorder }} />
+                              <span className={`flex-1 text-xs text-right leading-snug ${r.completed ? 'line-through text-gray-300' : 'text-gray-700'}`}>
+                                {r.text}
+                              </span>
+                              <button onClick={() => deleteReminder(r.id)}
+                                className="text-gray-200 hover:text-red-400 transition text-sm leading-none flex-shrink-0">×</button>
+                            </li>
+                          ))}
+                        </ul>
+                        {/* Add reminder input */}
+                        <div className="flex gap-1.5 flex-row-reverse">
+                          <input
+                            type="text"
+                            value={newReminder[kid.key] || ''}
+                            onChange={e => setNewReminder(prev => ({ ...prev, [kid.key]: e.target.value }))}
+                            onKeyDown={e => e.key === 'Enter' && addReminder(kid.key)}
+                            placeholder="הוסף תזכורת..."
+                            dir="rtl"
+                            className="flex-1 border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 min-w-0"
+                            style={{ borderColor: kid.thBorder + '77', outlineColor: kid.thBorder }}
+                          />
+                          <button
+                            onClick={() => addReminder(kid.key)}
+                            disabled={!newReminder[kid.key]?.trim()}
+                            className="text-white text-xs font-bold px-2.5 py-1 rounded-lg transition disabled:opacity-40 whitespace-nowrap"
+                            style={{ background: kid.thBorder }}
+                          >+</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {totalEvents === 0 && !loadingEvents && (
+          <div className="text-center py-8 text-gray-400 mt-2">
+            <p className="text-4xl mb-3">📭</p>
+            <p className="text-lg font-semibold">אין אירועים ביום זה</p>
           </div>
         )}
       </div>
@@ -364,29 +363,29 @@ export default function KidsSchedulePage() {
   )
 }
 
-function EventCard({ event, onToggleComplete, accentColor }: {
+function EventCard({ event, onToggleComplete, onDelete, accentColor }: {
   event: Event
   onToggleComplete: (e: Event) => void
+  onDelete: (id: string) => void
   accentColor: string
 }) {
   const done = !!event.completed
   return (
-    <div className={`px-4 py-3 transition-colors ${done ? 'bg-gray-50' : 'bg-white hover:bg-gray-50/50'}`}>
+    <div className={`px-3 py-3 transition-colors group ${done ? 'bg-gray-50' : 'bg-white hover:bg-gray-50/50'}`}>
       <div className="flex items-start gap-2 flex-row-reverse">
         {/* Checkbox */}
         <input
           type="checkbox"
           checked={done}
           onChange={() => onToggleComplete(event)}
-          className="mt-1 w-4 h-4 accent-green-500 flex-shrink-0 cursor-pointer"
+          className="mt-0.5 w-4 h-4 flex-shrink-0 cursor-pointer"
+          style={{ accentColor: '#22c55e' }}
         />
         <div className="flex-1 min-w-0 text-right">
-
-          {/* Badges row */}
+          {/* Time + badges */}
           <div className="flex flex-wrap gap-1 flex-row-reverse mb-1">
             {event.is_recurring && (
-              <span className="text-xs px-1.5 py-0.5 rounded-full font-medium"
-                style={{ background: '#E8F5E9', color: '#1B5E20' }}>🔄 קבוע</span>
+              <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-green-50 text-green-800">🔄 קבוע</span>
             )}
             {event.start_time && (
               <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600" dir="ltr">
@@ -417,17 +416,20 @@ function EventCard({ event, onToggleComplete, accentColor }: {
 
           {/* Meeting link */}
           {event.meeting_link && !done && (
-            <a
-              href={event.meeting_link}
-              target="_blank"
-              rel="noopener noreferrer"
+            <a href={event.meeting_link} target="_blank" rel="noopener noreferrer"
               onClick={e => e.stopPropagation()}
-              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 mt-1.5 font-semibold bg-blue-50 px-2 py-1 rounded-lg"
-            >
+              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 mt-1.5 font-semibold bg-blue-50 px-2 py-1 rounded-lg">
               🔗 כניסה לפגישה
             </a>
           )}
         </div>
+
+        {/* Delete button — visible on hover */}
+        <button
+          onClick={() => onDelete(event.id)}
+          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-500 text-base leading-none flex-shrink-0 mt-0.5"
+          title="מחק אירוע"
+        >🗑️</button>
       </div>
     </div>
   )
