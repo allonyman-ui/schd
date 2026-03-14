@@ -297,7 +297,12 @@ export default function InboxPage() {
           body: JSON.stringify({ ...ev, source: 'inbox' }),
         })
         if (r.ok) {
-          savedCount++
+          const d = await r.json().catch(() => ({}))
+          if (d.duplicate) {
+            errors.push(`"${ev.title}": כבר קיים בלו"ז (דילגנו)`)
+          } else {
+            savedCount++
+          }
         } else {
           let msg = `שגיאת שרת ${r.status}`
           try { const d = await r.json(); msg = d.error || msg } catch { /* ignore */ }

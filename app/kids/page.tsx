@@ -237,7 +237,7 @@ export default function KidsSchedulePage() {
           </div>
         </div>
 
-        {/* Schedule table */}
+        {/* Schedule columns */}
         {loadingEvents ? (
           <div className="text-center py-12 text-gray-400 text-lg">טוען לוח זמנים...</div>
         ) : totalEvents === 0 ? (
@@ -246,77 +246,33 @@ export default function KidsSchedulePage() {
             <p className="text-lg font-semibold">אין אירועים ביום זה</p>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-2xl shadow-sm border border-gray-100">
-            <table className="w-full border-collapse" style={{ tableLayout: 'fixed', minWidth: '480px' }}>
-              <colgroup>
-                <col style={{ width: '72px' }} />
-                <col /><col /><col />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th className="border-2 border-gray-300 px-1 py-2 text-xs font-bold text-gray-500 bg-gray-50">שעה</th>
-                  {KIDS.map(kid => (
-                    <th key={kid.key} className="border-2 px-2 py-2"
-                      style={{ background: kid.thBg, color: kid.thColor, borderColor: kid.thBorder }}>
-                      <div className="flex items-center justify-center gap-1.5">
-                        <span className="text-lg sm:text-xl">{kid.emoji}</span>
-                        <div>
-                          <div className="text-base sm:text-lg font-black">{kid.name}</div>
-                          <div className="text-xs font-normal opacity-70">
-                            {kidEvents[kid.key as keyof typeof kidEvents].length} פעילויות
-                          </div>
-                        </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {KIDS.map(kid => {
+              const evs = kidEvents[kid.key as keyof typeof kidEvents]
+              return (
+                <div key={kid.key} className="rounded-2xl overflow-hidden shadow-sm border border-gray-100">
+                  {/* Kid header */}
+                  <div className="px-4 py-3 flex items-center gap-2 flex-row-reverse"
+                    style={{ background: kid.thBg, borderBottom: `2px solid ${kid.thBorder}` }}>
+                    <span className="text-2xl">{kid.emoji}</span>
+                    <div className="flex-1 text-right">
+                      <div className="font-black text-lg" style={{ color: kid.thColor }}>{kid.name}</div>
+                      <div className="text-xs opacity-60" style={{ color: kid.thColor }}>
+                        {evs.length === 0 ? 'אין פעילויות' : `${evs.length} פעילויות`}
                       </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {/* All-day row */}
-                {hasAllDay && (
-                  <tr style={{ background: '#FAF5FF' }}>
-                    <td className="border border-gray-200 text-center text-xs font-bold py-2 align-middle"
-                      style={{ background: '#EDE7F6', color: '#4A148C', borderColor: '#AB47BC' }}>
-                      כל היום
-                    </td>
-                    {KIDS.map(kid => {
-                      const evs = allDayEvents[kid.key as keyof typeof allDayEvents]
-                      return (
-                        <td key={kid.key} className="border border-purple-100 px-2 py-2 align-top">
-                          {evs.length === 0 ? (
-                            <span className="text-gray-200 text-xs block text-center">—</span>
-                          ) : evs.map(ev => (
-                            <EventCell key={ev.id} event={ev} onToggleComplete={toggleEventComplete} />
-                          ))}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                )}
-
-                {/* Timed rows */}
-                {allTimedSlots.map((slot, idx) => (
-                  <tr key={slot} style={{ background: idx % 2 === 0 ? '#fff' : '#FAFAFA' }}>
-                    <td className="border border-gray-200 text-center align-middle py-2 font-extrabold text-xs sm:text-sm"
-                      style={{ background: '#F5F5F5', color: '#333', borderColor: '#ccc', direction: 'ltr' }}>
-                      {slot.slice(0, 5)}
-                    </td>
-                    {KIDS.map(kid => {
-                      const slotEvs = kidEvents[kid.key as keyof typeof kidEvents].filter(e => e.start_time === slot)
-                      return (
-                        <td key={kid.key} className="border border-gray-100 px-2 py-2 align-top">
-                          {slotEvs.length === 0 ? (
-                            <span className="text-gray-200 text-sm block text-center">—</span>
-                          ) : slotEvs.map(ev => (
-                            <EventCell key={ev.id} event={ev} onToggleComplete={toggleEventComplete} />
-                          ))}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  </div>
+                  {/* Events */}
+                  <div className="bg-white divide-y divide-gray-50">
+                    {evs.length === 0 ? (
+                      <div className="py-8 text-center text-gray-300 text-sm">—</div>
+                    ) : evs.map(ev => (
+                      <EventCard key={ev.id} event={ev} onToggleComplete={toggleEventComplete} accentColor={kid.thBorder} />
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -324,37 +280,65 @@ export default function KidsSchedulePage() {
   )
 }
 
-function EventCell({ event, onToggleComplete }: { event: Event; onToggleComplete: (e: Event) => void }) {
+function EventCard({ event, onToggleComplete, accentColor }: {
+  event: Event
+  onToggleComplete: (e: Event) => void
+  accentColor: string
+}) {
+  const done = !!event.completed
   return (
-    <div className="mb-1 last:mb-0">
-      <div className="flex items-start gap-1.5 flex-row-reverse">
+    <div className={`px-4 py-3 transition-colors ${done ? 'bg-gray-50' : 'bg-white hover:bg-gray-50/50'}`}>
+      <div className="flex items-start gap-2 flex-row-reverse">
+        {/* Checkbox */}
         <input
           type="checkbox"
-          checked={!!event.completed}
+          checked={done}
           onChange={() => onToggleComplete(event)}
-          className="mt-0.5 w-3.5 h-3.5 accent-green-500 flex-shrink-0 cursor-pointer"
+          className="mt-1 w-4 h-4 accent-green-500 flex-shrink-0 cursor-pointer"
         />
-        <div className="flex-1 min-w-0">
-          {event.is_recurring && (
-            <span className="inline-block text-xs font-bold px-1.5 py-0.5 rounded-full mb-0.5"
-              style={{ background: '#E8F5E9', color: '#1B5E20' }}>🔄</span>
-          )}
-          <div className={`font-extrabold text-xs sm:text-sm leading-tight ${event.completed ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+        <div className="flex-1 min-w-0 text-right">
+
+          {/* Badges row */}
+          <div className="flex flex-wrap gap-1 flex-row-reverse mb-1">
+            {event.is_recurring && (
+              <span className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                style={{ background: '#E8F5E9', color: '#1B5E20' }}>🔄 קבוע</span>
+            )}
+            {event.start_time && (
+              <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600" dir="ltr">
+                {event.start_time.slice(0, 5)}{event.end_time ? ` – ${event.end_time.slice(0, 5)}` : ''}
+              </span>
+            )}
+          </div>
+
+          {/* Title */}
+          <div className={`font-bold text-sm leading-snug mb-1 ${done ? 'line-through text-gray-400' : 'text-gray-900'}`}
+            style={done ? {} : { borderRight: `3px solid ${accentColor}`, paddingRight: '6px' }}>
             {event.title}
           </div>
-          {event.end_time && !event.completed && (
-            <div className="text-xs text-gray-400 mt-0.5">עד {event.end_time.slice(0, 5)}</div>
+
+          {/* Location */}
+          {event.location && (
+            <div className={`text-xs flex items-center gap-1 flex-row-reverse mb-1 ${done ? 'text-gray-300' : 'text-gray-500'}`}>
+              <span>📍</span><span>{event.location}</span>
+            </div>
           )}
-          {event.location && !event.completed && (
-            <div className="text-xs text-gray-400">📍 {event.location}</div>
+
+          {/* Notes */}
+          {event.notes && (
+            <div className={`text-xs rounded-lg px-2 py-1.5 mt-1 text-right leading-relaxed ${done ? 'bg-gray-100 text-gray-300' : 'bg-amber-50 text-amber-900 border border-amber-100'}`}>
+              <span className="font-semibold">📝 </span>{event.notes}
+            </div>
           )}
-          {event.meeting_link && !event.completed && (
+
+          {/* Meeting link */}
+          {event.meeting_link && !done && (
             <a
               href={event.meeting_link}
               target="_blank"
               rel="noopener noreferrer"
               onClick={e => e.stopPropagation()}
-              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 mt-0.5 font-medium"
+              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 mt-1.5 font-semibold bg-blue-50 px-2 py-1 rounded-lg"
             >
               🔗 כניסה לפגישה
             </a>
