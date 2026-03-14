@@ -285,26 +285,40 @@ export default function InboxPage() {
     if (readyEvents.length === 0) return
 
     setSaving(true)
+    setError('')
     let savedCount = 0
+    const errors: string[] = []
 
     for (const ev of readyEvents) {
-      const r = await fetch('/api/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...ev, source: 'inbox' }),
-      })
-      if (r.ok) savedCount++
+      try {
+        const r = await fetch('/api/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...ev, source: 'inbox' }),
+        })
+        if (r.ok) {
+          savedCount++
+        } else {
+          let msg = `שגיאת שרת ${r.status}`
+          try { const d = await r.json(); msg = d.error || msg } catch { /* ignore */ }
+          errors.push(`"${ev.title}": ${msg}`)
+        }
+      } catch (err) {
+        errors.push(`"${ev.title}": שגיאת רשת`)
+        console.error(err)
+      }
     }
 
     setSaving(false)
 
     if (savedCount > 0) {
       setSuccessMsg(`✅ נשמרו ${savedCount} אירועים בלו"ז`)
-      setExtractedEvents([])
+      setExtractedEvents(prev => prev.filter(e => !e.person || !e.date))
       setRawText('')
       fetchHistory()
-    } else {
-      setError('שגיאה בשמירה, נסה שוב')
+    }
+    if (errors.length > 0) {
+      setError('שגיאה בשמירה: ' + errors.join(' | '))
     }
   }
 
