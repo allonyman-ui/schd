@@ -48,6 +48,15 @@ export default function NavBar() {
             ))}
 
             <Link
+              href="/kids"
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                pathname === '/kids' ? 'bg-rose-100 text-rose-800' : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              👧 ילדים
+            </Link>
+
+            <Link
               href="/inbox"
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
                 pathname === '/inbox' ? 'bg-green-100 text-green-800' : 'text-gray-600 hover:bg-gray-100'

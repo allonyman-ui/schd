@@ -6,8 +6,31 @@ export async function GET(request: NextRequest) {
   const startDate = searchParams.get('start')
   const endDate = searchParams.get('end')
   const person = searchParams.get('person')
+  const includeRecurring = searchParams.get('include_recurring') === 'true'
 
   const supabase = createServiceClient()
+
+  if (includeRecurring && startDate && endDate) {
+    // Fetch date-specific events AND all recurring events
+    const [dateRes, recurringRes] = await Promise.all([
+      supabase
+        .from('events')
+        .select('*')
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .eq('is_recurring', false)
+        .order('start_time'),
+      supabase
+        .from('events')
+        .select('*')
+        .eq('is_recurring', true)
+        .order('start_time'),
+    ])
+    if (dateRes.error) return NextResponse.json({ error: dateRes.error.message }, { status: 500 })
+    if (recurringRes.error) return NextResponse.json({ error: recurringRes.error.message }, { status: 500 })
+    return NextResponse.json([...(dateRes.data ?? []), ...(recurringRes.data ?? [])])
+  }
+
   let query = supabase.from('events').select('*').order('date').order('start_time')
 
   if (startDate) query = query.gte('date', startDate)

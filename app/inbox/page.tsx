@@ -39,23 +39,28 @@ export default function InboxPage() {
     setProcessing(true)
     setError('')
 
-    const res = await fetch('/api/process-whatsapp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rawText }),
-    })
+    try {
+      const res = await fetch('/api/process-whatsapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rawText }),
+      })
 
-    const data = await res.json()
-    if (!res.ok) {
-      setError(data.error || 'שגיאה בעיבוד ההודעות')
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error || 'שגיאה בעיבוד ההודעות')
+        return
+      }
+
+      setExtractedEvents(data.events)
+      setSelectedEvents(new Set(data.events.map((_: ExtractedEvent, i: number) => i)))
+      setStep('review')
+    } catch (err) {
+      setError('שגיאת רשת — נסה שוב בעוד רגע')
+      console.error('Process error:', err)
+    } finally {
       setProcessing(false)
-      return
     }
-
-    setExtractedEvents(data.events)
-    setSelectedEvents(new Set(data.events.map((_: ExtractedEvent, i: number) => i)))
-    setStep('review')
-    setProcessing(false)
   }
 
   async function handleSave() {
