@@ -344,7 +344,7 @@ export default function KidsSchedulePage() {
               <tr>
                 {KIDS.map(kid => (
                   <th key={kid.key} style={{ border: '1.5px solid #333', padding: '6px 8px', background: '#f0f0f0', textAlign: 'center', width: '33%' }}>
-                    {kid.name} (גיל {kid.age}) — {getKidEvents(kid.key).length} פעילויות
+                    {kid.name} — {getKidEvents(kid.key).length} פעילויות
                   </th>
                 ))}
               </tr>
@@ -413,44 +413,6 @@ export default function KidsSchedulePage() {
           </div>
         </div>
 
-        {/* ── Lunch menu ───────────────────────────────────────────────── */}
-        <div className="bg-gradient-to-l from-orange-100 via-amber-50 to-yellow-50 border-2 border-orange-200 rounded-3xl p-5 mb-6 shadow-sm no-print">
-          <div className="flex items-center justify-between flex-row-reverse mb-3">
-            <div className="flex items-center gap-2 flex-row-reverse">
-              <span className="text-2xl">🍽️</span>
-              <h2 className="text-lg font-black text-orange-800">תפריט צהריים</h2>
-            </div>
-            {!lunchEdit && (
-              <button onClick={() => { setLunchDraft(lunchMenu); setLunchEdit(true) }}
-                className="text-sm text-orange-600 hover:text-orange-800 font-bold border-2 border-orange-200 rounded-xl px-3 py-1.5 bg-white hover:bg-orange-50 transition shadow-sm">
-                ✏️ ערוך
-              </button>
-            )}
-          </div>
-          {lunchEdit ? (
-            <div className="space-y-3">
-              <textarea value={lunchDraft} onChange={e => setLunchDraft(e.target.value)}
-                placeholder="🍗 שניצל עם אורז&#10;🥗 סלט ירקות&#10;🍊 פרי"
-                className="w-full border-2 border-orange-200 rounded-2xl px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none h-28 shadow-sm"
-                dir="rtl" autoFocus />
-              <div className="flex gap-2 flex-row-reverse">
-                <button onClick={saveLunch} disabled={savingLunch}
-                  className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-5 py-2 rounded-xl transition disabled:opacity-50 shadow-sm">
-                  {savingLunch ? 'שומר...' : '💾 שמור'}
-                </button>
-                <button onClick={() => setLunchEdit(false)}
-                  className="text-gray-500 border-2 border-gray-200 font-semibold px-4 py-2 rounded-xl bg-white hover:bg-gray-50 transition">
-                  ביטול
-                </button>
-              </div>
-            </div>
-          ) : lunchMenu ? (
-            <p className="text-sm text-orange-900 whitespace-pre-line leading-relaxed text-right font-medium">{lunchMenu}</p>
-          ) : (
-            <p className="text-sm text-orange-300 text-center py-1">לא הוזן תפריט — לחץ ערוך</p>
-          )}
-        </div>
-
         {/* ── Kid columns ──────────────────────────────────────────────── */}
         {loadingEvents ? (
           <div className="text-center py-16 text-gray-400 text-xl">⏳ טוען...</div>
@@ -471,7 +433,6 @@ export default function KidsSchedulePage() {
                     <KidAvatar kid={kid} theme={theme} onClick={() => cycleTheme(kid.key)} />
                     <div className="flex-1 text-right">
                       <div className="font-black text-2xl text-white drop-shadow">{kid.name}</div>
-                      <div className="text-white/80 text-sm font-semibold">גיל {kid.age}</div>
                       <div className="text-white/70 text-xs mt-0.5">
                         {evs.length === 0 ? 'יום חופשי 🎉' : `${evs.length} פעילויות היום`}
                       </div>
