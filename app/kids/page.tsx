@@ -102,8 +102,8 @@ const THEMES: Record<string, KidTheme[]> = {
 // ── Kid base config ────────────────────────────────────────────────────────
 const KIDS = [
   { key: 'ami',  name: 'אמי',  age: 6,  photo: 'https://i.imgur.com/cG8XKwn.jpeg' as string|null, initials: 'א' },
-  { key: 'alex', name: 'אלכס', age: 15, photo: 'https://i.imgur.com/5BKBLqt.jpeg' as string|null, initials: 'א' },
-  { key: 'itan', name: 'איתן', age: 13, photo: 'https://i.imgur.com/G0j3TD8.jpeg' as string|null, initials: 'א' },
+  { key: 'alex', name: 'אלכס', age: 15, photo: 'https://i.imgur.com/G0j3TD8.jpeg' as string|null, initials: 'א' },
+  { key: 'itan', name: 'איתן', age: 13, photo: 'https://i.imgur.com/5BKBLqt.jpeg' as string|null, initials: 'א' },
 ]
 
 // ── Avatar component ───────────────────────────────────────────────────────
