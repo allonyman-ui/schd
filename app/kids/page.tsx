@@ -830,30 +830,44 @@ export default function KidsSchedulePage() {
           </div>
         </div>
 
-        {/* Date + clock + weather */}
-        <div className="mb-4 no-print flex flex-col sm:flex-row items-center sm:items-start gap-3">
-          {/* Date / clock card */}
-          <div className="text-center bg-white rounded-3xl shadow-md px-8 py-4 border border-gray-100 flex-shrink-0">
-            <h1 className="text-2xl sm:text-3xl font-black text-gray-900">📅 לו&quot;ז משפחת אלוני — {format(selectedDate, 'd בMMMM', { locale: he })}</h1>
-            <p className="text-sm text-gray-500 mt-1">{dateLabel}</p>
-            <div className="mt-2 flex items-center justify-center gap-2">
-              <span className="text-xs text-gray-400">שעה עכשיו:</span><LiveClock />
-            </div>
-          </div>
-          {/* Weather */}
-          <div className="flex-1 w-full sm:w-auto">
-            <WeatherWidget />
-          </div>
-        </div>
+        {/* ── Hero header ──────────────────────────────────────────────── */}
+        <div className="mb-5 no-print rounded-3xl overflow-hidden shadow-xl"
+          style={{ background: 'linear-gradient(135deg,#0f172a 0%,#1e3a5f 50%,#0f2744 100%)' }}>
+          <div className="px-6 pt-5 pb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-5 justify-center no-print flex-wrap">
-          {TABS.map(tab => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-              className={`px-4 py-2.5 rounded-2xl font-bold text-sm transition-all shadow-sm ${activeTab===tab.key ? 'bg-gray-800 text-white shadow-md scale-105' : 'bg-white text-gray-600 hover:bg-gray-50 border-2 border-gray-200'}`}>
-              {tab.label}
-            </button>
-          ))}
+            {/* Left: title + date + clock */}
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-2xl">🏠</span>
+                <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">משפחת אלוני</h1>
+              </div>
+              <div className="text-blue-200 text-sm font-medium">{dateLabel}</div>
+              <div className="mt-2 flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <LiveClock />
+              </div>
+            </div>
+
+            {/* Right: weather inline */}
+            <div className="w-full sm:w-auto">
+              <WeatherWidget />
+            </div>
+
+          </div>
+
+          {/* ── Tab bar built into the hero ── */}
+          <div className="px-4 pb-3 flex gap-1.5 overflow-x-auto">
+            {TABS.map(tab => (
+              <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                className={`px-3.5 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all flex-shrink-0
+                  ${activeTab === tab.key
+                    ? 'bg-white text-gray-900 shadow-md'
+                    : 'text-white/60 hover:text-white hover:bg-white/10'
+                  }`}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* ── FAMILY TAB ─────────────────────────────────────────────── */}

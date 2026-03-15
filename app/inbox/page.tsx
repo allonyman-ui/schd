@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { format } from 'date-fns'
 
 const PERSON_OPTIONS = ['ami', 'alex', 'itan', 'danil', 'assaf']
@@ -18,13 +18,14 @@ interface ExtractedEvent {
   meeting_link: string | null; action?: string
 }
 
-type InputTab = 'text' | 'email' | 'calendar' | 'quick'
+type InputTab = 'text' | 'email' | 'calendar' | 'quick' | 'automail'
 
 const INPUT_TABS = [
-  { key: 'text'     as InputTab, icon: '📋', label: 'הדבק טקסט' },
-  { key: 'email'    as InputTab, icon: '📧', label: 'מייל' },
-  { key: 'calendar' as InputTab, icon: '📅', label: 'Google Calendar' },
-  { key: 'quick'    as InputTab, icon: '⚡', label: 'פקודה מהירה' },
+  { key: 'text'      as InputTab, icon: '📋', label: 'הדבק טקסט' },
+  { key: 'email'     as InputTab, icon: '📧', label: 'מייל' },
+  { key: 'calendar'  as InputTab, icon: '📅', label: 'Google Calendar' },
+  { key: 'quick'     as InputTab, icon: '⚡', label: 'פקודה מהירה' },
+  { key: 'automail'  as InputTab, icon: '📨', label: 'פורוורד אוטומטי' },
 ]
 
 function formatDate(d: string) {
@@ -124,6 +125,21 @@ export default function InboxPage() {
   const [successMsg, setSuccessMsg] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // Auto-mail tab
+  const [emailBatches, setEmailBatches] = useState<Array<{id:string; raw_text:string; processed_events:ExtractedEvent[]; created_at:string}>>([])
+  const [loadingBatches, setLoadingBatches] = useState(false)
+  const inboundAddress = process.env.NEXT_PUBLIC_POSTMARK_INBOUND_EMAIL || ''
+
+  useEffect(() => {
+    if (inputTab === 'automail') {
+      setLoadingBatches(true)
+      fetch('/api/email-inbound')
+        .then(r => r.ok ? r.json() : [])
+        .then(d => setEmailBatches(d))
+        .finally(() => setLoadingBatches(false))
+    }
+  }, [inputTab])
+
   async function handleProcess(text: string) {
     if (!text.trim()) return
     setProcessing(true); setError(''); setSuccessMsg(''); setExtractedEvents([])
@@ -179,6 +195,7 @@ export default function InboxPage() {
     email: `הדבק כאן את תוכן המייל כפי שקיבלת אותו — כולל שורת הנושא, שם השולח, התאריך, וכל הפרטים. Claude יזהה אוטומטית את כל האירועים.`,
     calendar: `הדבק כאן תוכן מיצוא Google Calendar (.ics):\n\nBEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:כדורגל — איתן\nDTSTART:20260320T160000\nDTEND:20260320T180000\nLOCATION:מגרש ספורט\nDESCRIPTION:אימון שבועי\nEND:VEVENT\nEND:VCALENDAR\n\nאו פשוט הדבק טקסט שהעתקת מ-Google Calendar.`,
     quick: ``,
+    automail: ``,
   }
 
   const hints: Record<InputTab, { title: string; steps: string[] }> = {
@@ -202,6 +219,7 @@ export default function InboxPage() {
     },
     text: { title: '', steps: [] },
     quick: { title: '', steps: [] },
+    automail: { title: '', steps: [] },
   }
 
   return (
@@ -280,6 +298,84 @@ export default function InboxPage() {
                   ))}
                 </div>
               </div>
+            </div>
+          ) : inputTab === 'automail' ? (
+            /* ── Auto-mail forwarding tab ── */
+            <div>
+              {/* Address box */}
+              <div className="mb-4 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50 p-4 text-right">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xl">📨</span>
+                  <span className="font-black text-emerald-800 text-sm">כתובת הפורוורד שלך</span>
+                </div>
+                {inboundAddress ? (
+                  <div className="flex items-center gap-2 flex-row-reverse">
+                    <code className="flex-1 bg-white rounded-xl px-3 py-2 text-sm font-mono text-emerald-700 border border-emerald-200 text-left" dir="ltr">{inboundAddress}</code>
+                    <button onClick={() => navigator.clipboard.writeText(inboundAddress)}
+                      className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-xl hover:bg-emerald-700 transition font-bold flex-shrink-0">
+                      העתק
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-emerald-700">הגדר <code className="bg-white px-1 rounded">NEXT_PUBLIC_POSTMARK_INBOUND_EMAIL</code> ב-Vercel לאחר הגדרת Postmark</p>
+                )}
+                <p className="text-xs text-emerald-600 mt-2">
+                  פשוט העבר כל מייל, הזמנה לפגישה, או אישור תור לכתובת הזו — אירועים יתווספו אוטומטית ללוח 🪄
+                </p>
+              </div>
+
+              {/* Setup steps */}
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-4">
+                <div className="font-black text-blue-700 text-sm mb-2">⚡ הגדרה ב-5 דקות (חד-פעמי)</div>
+                <ol className="space-y-1.5">
+                  {[
+                    <>הירשם בחינם ל-<a href="https://postmarkapp.com" target="_blank" rel="noopener noreferrer" className="underline font-bold">postmarkapp.com</a></>,
+                    'צור "Inbound Server" חדש',
+                    <>הגדר Webhook URL: <code className="bg-blue-100 px-1 rounded text-xs">https://allonys.com/api/email-inbound</code></>,
+                    'קבל כתובת אימייל בפורמט @inbound.postmarkapp.com (או הגדר דומיין משלך)',
+                    'הוסף את הכתובת ל-Vercel כ-NEXT_PUBLIC_POSTMARK_INBOUND_EMAIL',
+                    '✅ הכל מוכן — תעביר מיילים ואירועים יופיעו אוטומטית',
+                  ].map((s, i) => (
+                    <li key={i} className="text-xs text-blue-600 flex gap-2">
+                      <span className="font-black flex-shrink-0 text-blue-400">{i+1}.</span><span>{s}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+              {/* Recent imports */}
+              <div className="font-black text-gray-700 text-sm mb-2">📬 מיילים שעובדו לאחרונה</div>
+              {loadingBatches ? (
+                <div className="text-center py-6 text-gray-400 text-sm">⏳ טוען...</div>
+              ) : emailBatches.length === 0 ? (
+                <div className="text-center py-6 text-gray-300 text-sm">עדיין לא התקבלו מיילים אוטומטיים</div>
+              ) : (
+                <div className="space-y-2">
+                  {emailBatches.map(batch => {
+                    const subjectMatch = batch.raw_text.match(/subject: (.+)/i)
+                    const fromMatch    = batch.raw_text.match(/from: (.+)/i)
+                    const subject = subjectMatch?.[1]?.trim() || '(ללא נושא)'
+                    const from    = fromMatch?.[1]?.trim() || ''
+                    const evCount = batch.processed_events?.length ?? 0
+                    const dateStr = new Date(batch.created_at).toLocaleDateString('he-IL', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })
+                    return (
+                      <div key={batch.id} className="flex items-center gap-3 flex-row-reverse bg-white rounded-xl border border-gray-100 px-3 py-2.5 shadow-sm">
+                        <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-base flex-shrink-0">📧</div>
+                        <div className="flex-1 text-right min-w-0">
+                          <div className="font-bold text-sm text-gray-800 truncate">{subject}</div>
+                          {from && <div className="text-xs text-gray-400 truncate">{from}</div>}
+                        </div>
+                        <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
+                          <span className={`text-xs font-black px-2 py-0.5 rounded-full ${evCount > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                            {evCount > 0 ? `✅ ${evCount} אירועים` : '—'}
+                          </span>
+                          <span className="text-[10px] text-gray-300">{dateStr}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           ) : (
             /* Text / Email / Calendar — all go through same textarea */

@@ -52,84 +52,86 @@ export default function WeatherWidget() {
   }, [])
 
   if (loading) return (
-    <div className="flex items-center gap-2 text-gray-400 text-sm px-3 py-2 bg-white/60 rounded-2xl">
-      <span className="animate-spin">⏳</span>
+    <div className="flex items-center gap-2 text-white/50 text-sm px-1 py-1">
+      <span className="w-2 h-2 rounded-full bg-white/30 animate-pulse flex-shrink-0" />
       <span>מזג אוויר...</span>
     </div>
   )
   if (error || !data) return null
 
-  const cur  = weatherInfo(data.current.code)
-  const tod  = weatherInfo(data.today.code)
-  const tom  = weatherInfo(data.tomorrow.code)
+  const cur = weatherInfo(data.current.code)
+  const tod = weatherInfo(data.today.code)
+  const tom = weatherInfo(data.tomorrow.code)
 
   return (
-    <div className="bg-white/90 backdrop-blur-sm rounded-2xl border border-sky-100 shadow-sm px-3 py-2.5 text-right w-full" dir="rtl">
-      {/* Location badge */}
-      <div className="text-[10px] text-sky-500 font-bold mb-1.5 flex items-center gap-1">
-        <span>📍</span><span>יהוד מונוסון</span>
+    <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-right" dir="rtl">
+
+      {/* Current — big number */}
+      <div className="flex items-center gap-2.5 flex-shrink-0">
+        <span className="text-4xl drop-shadow-lg">{cur.icon}</span>
+        <div>
+          <div className="text-3xl font-black text-white leading-none tabular-nums">
+            {Math.round(data.current.temp)}°
+          </div>
+          <div className="text-blue-200 text-xs mt-0.5 font-medium">{cur.label}</div>
+          {data.current.rain > 0 && (
+            <div className="text-sky-300 text-[11px] font-bold mt-0.5">💧 {data.current.rain}%</div>
+          )}
+        </div>
       </div>
 
-      <div className="flex flex-wrap gap-3 items-start">
+      {/* Divider */}
+      <div className="w-px h-10 bg-white/15 flex-shrink-0 hidden sm:block" />
 
-        {/* Current temp — big */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-3xl">{cur.icon}</span>
-          <div>
-            <div className="text-2xl font-black text-gray-800 leading-none">
-              {Math.round(data.current.temp)}°
+      {/* Hourly strip */}
+      <div className="flex gap-1 overflow-x-auto flex-shrink-0" dir="ltr">
+        {data.hourly.map((h, i) => {
+          const hi = weatherInfo(h.code)
+          return (
+            <div key={i}
+              className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl flex-shrink-0 transition
+                ${i === 0 ? 'bg-white/15 ring-1 ring-white/20' : 'hover:bg-white/10'}`}>
+              <span className="text-[10px] font-bold text-white/50">{h.time}</span>
+              <span className="text-sm leading-none">{hi.icon}</span>
+              <span className="text-xs font-black text-white">{Math.round(h.temp)}°</span>
+              {h.rain > 0 && <span className="text-[9px] text-sky-300 font-bold">{h.rain}%</span>}
             </div>
-            <div className="text-xs text-gray-500">{cur.label}</div>
-            {data.current.rain > 0 && (
-              <div className="text-[11px] text-blue-500 font-bold">💧 {data.current.rain}%</div>
+          )
+        })}
+      </div>
+
+      {/* Divider */}
+      <div className="w-px h-10 bg-white/15 flex-shrink-0 hidden sm:block" />
+
+      {/* Today / Tomorrow */}
+      <div className="flex gap-3 flex-shrink-0">
+        {[
+          { label: 'היום', info: tod, day: data.today },
+          { label: 'מחר',  info: tom, day: data.tomorrow },
+        ].map(({ label, info, day }) => (
+          <div key={label} className="text-center min-w-[48px]">
+            <div className="text-[10px] font-bold text-white/40 mb-0.5">{label}</div>
+            <div className="text-base leading-none">{info.icon}</div>
+            <div className="text-xs font-black text-white mt-0.5 tabular-nums">
+              {Math.round(day.min)}°–{Math.round(day.max)}°
+            </div>
+            {day.rain > 0 && (
+              <>
+                <div className="mt-1 h-1 rounded-full bg-white/10 overflow-hidden">
+                  <div className="h-full rounded-full bg-sky-400" style={{ width: `${day.rain}%` }} />
+                </div>
+                <div className="text-[9px] text-sky-300 mt-0.5">{day.rain}%</div>
+              </>
             )}
           </div>
-        </div>
-
-        {/* Separator */}
-        <div className="w-px bg-gray-100 self-stretch flex-shrink-0" />
-
-        {/* Next 4 hours */}
-        <div className="flex gap-2 overflow-x-auto flex-shrink-0" dir="ltr">
-          {data.hourly.map((h, i) => {
-            const hi = weatherInfo(h.code)
-            return (
-              <div key={i} className={`flex flex-col items-center gap-0.5 px-1.5 py-1 rounded-xl flex-shrink-0 ${i === 0 ? 'bg-sky-50' : ''}`}>
-                <span className="text-[10px] font-bold text-gray-400">{h.time}</span>
-                <span className="text-base">{hi.icon}</span>
-                <span className="text-xs font-black text-gray-700">{Math.round(h.temp)}°</span>
-                {h.rain > 0 && <span className="text-[9px] text-blue-400 font-bold">{h.rain}%</span>}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Separator */}
-        <div className="w-px bg-gray-100 self-stretch flex-shrink-0" />
-
-        {/* Today / Tomorrow summary */}
-        <div className="flex gap-3 flex-shrink-0">
-          {/* Today */}
-          <div className="text-center min-w-[56px]">
-            <div className="text-[10px] font-bold text-gray-400 mb-0.5">היום</div>
-            <div className="text-base">{tod.icon}</div>
-            <div className="text-xs font-black text-gray-700">
-              {Math.round(data.today.min)}°–{Math.round(data.today.max)}°
-            </div>
-            <RainBar pct={data.today.rain} />
-          </div>
-          {/* Tomorrow */}
-          <div className="text-center min-w-[56px]">
-            <div className="text-[10px] font-bold text-gray-400 mb-0.5">מחר</div>
-            <div className="text-base">{tom.icon}</div>
-            <div className="text-xs font-black text-gray-700">
-              {Math.round(data.tomorrow.min)}°–{Math.round(data.tomorrow.max)}°
-            </div>
-            <RainBar pct={data.tomorrow.rain} />
-          </div>
-        </div>
-
+        ))}
       </div>
+
+      {/* Location */}
+      <div className="text-[10px] text-white/30 font-medium flex items-center gap-1 self-end pb-0.5 flex-shrink-0 hidden sm:flex">
+        <span>📍</span><span>יהוד</span>
+      </div>
+
     </div>
   )
 }
