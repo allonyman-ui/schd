@@ -125,14 +125,25 @@ const FAMILY_PEOPLE = [
   { key: 'danil', name: 'דניאל',  color: '#15803D', photo: null, emoji: '🌿' },
 ]
 
-type TabKey = 'family' | 'kids' | 'assaf' | 'danil' | 'stats'
+type TabKey = 'family' | 'kids' | 'assaf' | 'danil' | 'stats' | 'week'
 const TABS = [
   { key: 'family' as TabKey, label: '🏠 משפחה' },
+  { key: 'week'   as TabKey, label: '📅 שבועי' },
   { key: 'kids'   as TabKey, label: '👧👦 ילדים' },
   { key: 'assaf'  as TabKey, label: '💼 אסף' },
   { key: 'danil'  as TabKey, label: '🌿 דניאל' },
   { key: 'stats'  as TabKey, label: '📊 תובנות AI' },
 ]
+
+// ── Pure week-date helper (outside component) ──────────────────────────────
+function getWeekDates(date: Date): Date[] {
+  const sun = new Date(date)
+  sun.setDate(date.getDate() - date.getDay())
+  sun.setHours(12, 0, 0, 0)
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(sun); d.setDate(sun.getDate() + i); return d
+  })
+}
 
 const INSIGHT_STYLES: Record<string,{ bg: string; border: string; dot: string; titleColor: string }> = {
   warning:    { bg: '#FEF2F2', border: '#FECACA', dot: '#EF4444', titleColor: '#991B1B' },
@@ -387,6 +398,11 @@ export default function KidsSchedulePage() {
   const [eventForm, setEventForm] = useState<EventForm>(() => emptyForm())
 
   // Dashboard / AI insights
+  // Weekly view events
+  const [weekEvents, setWeekEvents] = useState<Event[]>([])
+  const [loadingWeek, setLoadingWeek] = useState(false)
+  const [loadedWeekStart, setLoadedWeekStart] = useState('')
+
   const [dashStats, setDashStats] = useState<any>(null)
   const [dashInsights, setDashInsights] = useState<any[]>([])
   const [loadingDash, setLoadingDash] = useState(false)
@@ -415,6 +431,18 @@ export default function KidsSchedulePage() {
     } finally { setLoadingReminders(false) }
   }, [])
 
+  const loadWeekEvents = useCallback(async () => {
+    const weekDates = getWeekDates(selectedDate)
+    const startStr = format(weekDates[0], 'yyyy-MM-dd')
+    const endStr   = format(weekDates[6], 'yyyy-MM-dd')
+    if (loadedWeekStart === startStr) return  // already loaded this week
+    setLoadingWeek(true)
+    try {
+      const res = await fetch(`/api/events?include_recurring=true&start=${startStr}&end=${endStr}`)
+      if (res.ok) { setWeekEvents(await res.json()); setLoadedWeekStart(startStr) }
+    } finally { setLoadingWeek(false) }
+  }, [selectedDate, loadedWeekStart])
+
   const loadDashboard = useCallback(async (dateOverride?: string) => {
     setLoadingDash(true)
     try {
@@ -435,6 +463,14 @@ export default function KidsSchedulePage() {
   useEffect(() => {
     if (activeTab === 'stats') loadDashboard()
   }, [activeTab]) // eslint-disable-line
+
+  useEffect(() => {
+    if (activeTab === 'week') { setLoadedWeekStart(''); }
+  }, [selectedDate]) // eslint-disable-line
+
+  useEffect(() => {
+    if (activeTab === 'week') loadWeekEvents()
+  }, [activeTab, loadedWeekStart]) // eslint-disable-line
 
   // Events CRUD
   function openAddEvent(person = '') {
@@ -536,7 +572,71 @@ export default function KidsSchedulePage() {
           onChange={patch => setEventForm(prev => ({ ...prev, ...patch }))} />
       )}
 
-      {/* ── PRINT ──────────────────────────────────────────────────────── */}
+      {/* ── PRINT (weekly) ─────────────────────────────────────────────── */}
+      {activeTab === 'week' && (() => {
+        const weekDates = getWeekDates(selectedDate)
+        const todayStr = format(new Date(), 'yyyy-MM-dd')
+        return (
+          <div className="print-table w-full" style={{ fontFamily: 'Arial, sans-serif', direction: 'rtl', fontSize: 11 }}>
+            <div style={{ textAlign: 'center', marginBottom: 6, borderBottom: '2px solid #000', paddingBottom: 4 }}>
+              <div style={{ fontSize: 20, fontWeight: 900 }}>📅 לו&quot;ז שבועי — משפחת אלוני</div>
+              <div style={{ fontSize: 12, color: '#555' }}>{format(weekDates[0], 'd.M')} – {format(weekDates[6], 'd.M.yyyy')}</div>
+            </div>
+            {/* Grid: 8 cols — person + 7 days */}
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+              <thead>
+                <tr>
+                  <th style={{ border: '1px solid #ccc', padding: '3px 5px', background: '#f5f5f5', width: 60 }} />
+                  {weekDates.map((d, i) => {
+                    const isToday = format(d, 'yyyy-MM-dd') === todayStr
+                    return (
+                      <th key={i} style={{ border: '1px solid #ccc', padding: '3px 5px', textAlign: 'center', background: isToday ? '#FFF8DC' : '#f5f5f5', fontWeight: 900 }}>
+                        <div>{HE_DAYS_FULL[DAY_NAMES[d.getDay()]]}</div>
+                        <div style={{ fontSize: 9, fontWeight: 400, color: '#666' }}>{format(d, 'd.M')}</div>
+                      </th>
+                    )
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {FAMILY_PEOPLE.map(person => (
+                  <tr key={person.key}>
+                    <td style={{ border: '1px solid #ccc', padding: '3px 5px', fontWeight: 900, background: person.color + '18', borderRight: `3px solid ${person.color}`, textAlign: 'center', fontSize: 10 }}>
+                      {person.emoji} {person.name}
+                    </td>
+                    {weekDates.map((d, dIdx) => {
+                      const dStr    = format(d, 'yyyy-MM-dd')
+                      const dayName = DAY_NAMES[d.getDay()]
+                      const evs     = weekEvents.filter(e => {
+                        if (e.person !== person.key) return false
+                        if (e.is_recurring && e.recurrence_days) return e.recurrence_days.includes(dayName)
+                        return e.date === dStr
+                      }).sort((a, b) => (a.start_time ?? '').localeCompare(b.start_time ?? ''))
+                      const isToday = dStr === todayStr
+                      return (
+                        <td key={dIdx} style={{ border: '1px solid #ccc', padding: '2px 4px', verticalAlign: 'top', minWidth: 60, background: isToday ? '#FFFBEB' : 'white' }}>
+                          {evs.length === 0
+                            ? <span style={{ color: '#ddd' }}>—</span>
+                            : evs.map((ev, i) => (
+                              <div key={ev.id} style={{ marginBottom: i < evs.length - 1 ? 3 : 0, borderBottom: i < evs.length - 1 ? '1px dashed #eee' : 'none', paddingBottom: i < evs.length - 1 ? 2 : 0 }}>
+                                {ev.start_time && <div style={{ fontSize: 9, color: '#666', direction: 'ltr' }}>{ev.start_time.slice(0,5)}</div>}
+                                <div style={{ fontWeight: 700, fontSize: 10, color: person.color }}>{ev.title}</div>
+                              </div>
+                            ))
+                          }
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      })()}
+
+      {/* ── PRINT (daily) ──────────────────────────────────────────────────── */}
+      {activeTab !== 'week' && (
       <div className="print-table w-full">
         <div style={{ fontFamily: 'Arial, sans-serif', direction: 'rtl', fontSize: 15 }}>
           <div style={{ textAlign: 'center', marginBottom: 6, borderBottom: '2.5px solid #000', paddingBottom: 5 }}>
@@ -569,6 +669,7 @@ export default function KidsSchedulePage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* ── SCREEN ─────────────────────────────────────────────────────── */}
       <div className="screen-only max-w-6xl mx-auto px-3 pb-12">
@@ -577,7 +678,7 @@ export default function KidsSchedulePage() {
         <div className="flex items-center justify-between mb-4 no-print gap-2 flex-row-reverse flex-wrap">
           <div className="flex gap-2">
             <button onClick={() => window.print()} className="bg-gray-800 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-gray-600 transition shadow-md whitespace-nowrap">🖨️ הדפס</button>
-            <button onClick={() => openAddEvent(activeTab !== 'kids' && activeTab !== 'family' && activeTab !== 'stats' ? activeTab : '')}
+            <button onClick={() => openAddEvent(activeTab !== 'kids' && activeTab !== 'family' && activeTab !== 'stats' && activeTab !== 'week' ? activeTab : '')}
               className="bg-blue-600 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-blue-700 transition shadow-md whitespace-nowrap">➕ הוסף אירוע</button>
           </div>
           <div className="flex items-center gap-2 flex-row-reverse flex-wrap">
@@ -669,6 +770,120 @@ export default function KidsSchedulePage() {
             </div>
           </div>
         )}
+
+        {/* ── WEEKLY CALENDAR TAB ────────────────────────────────────── */}
+        {activeTab === 'week' && (() => {
+          const weekDates = getWeekDates(selectedDate)
+          const todayStr = format(new Date(), 'yyyy-MM-dd')
+          const weekLabel = `${format(weekDates[0], 'd MMM', { locale: he })} – ${format(weekDates[6], 'd MMM yyyy', { locale: he })}`
+
+          return (
+            <div className="max-w-full mx-auto">
+              {/* Week nav */}
+              <div className="flex items-center justify-between mb-4 no-print">
+                <button onClick={() => setSelectedDate(d => subDays(d, 7))}
+                  className="flex items-center gap-1 px-4 py-2 bg-white rounded-xl border-2 border-gray-200 text-gray-600 font-bold text-sm hover:bg-gray-50 transition shadow-sm">
+                  ‹ שבוע קודם
+                </button>
+                <div className="text-center">
+                  <div className="font-black text-gray-700 text-lg">{weekLabel}</div>
+                  <button onClick={() => setSelectedDate(new Date())}
+                    className="text-xs text-amber-600 font-bold hover:underline mt-0.5">חזור להיום</button>
+                </div>
+                <button onClick={() => setSelectedDate(d => addDays(d, 7))}
+                  className="flex items-center gap-1 px-4 py-2 bg-white rounded-xl border-2 border-gray-200 text-gray-600 font-bold text-sm hover:bg-gray-50 transition shadow-sm">
+                  שבוע הבא ›
+                </button>
+              </div>
+
+              {loadingWeek ? (
+                <div className="text-center py-20 text-gray-400 text-xl">⏳ טוען לוח שבועי...</div>
+              ) : (
+                <div className="bg-white rounded-3xl shadow-lg overflow-hidden border border-gray-100">
+                  {/* ── Header row: blank + 7 day columns ── */}
+                  <div className="grid border-b-2 border-gray-200" style={{ gridTemplateColumns: '110px repeat(7, 1fr)', direction: 'ltr' }}>
+                    <div className="bg-gray-50 p-2" />
+                    {weekDates.map((d, i) => {
+                      const isToday = format(d, 'yyyy-MM-dd') === todayStr
+                      return (
+                        <div key={i} className={`p-2 text-center border-r border-gray-100 last:border-r-0 ${isToday ? 'bg-amber-50' : 'bg-gray-50'}`}>
+                          <div className={`text-[11px] font-bold uppercase tracking-wide ${isToday ? 'text-amber-600' : 'text-gray-400'}`}>
+                            {HE_DAYS_FULL[DAY_NAMES[d.getDay()]]}
+                          </div>
+                          <div className={`text-xl font-black leading-tight mt-0.5 ${isToday ? 'text-amber-500' : 'text-gray-700'}`}>
+                            {format(d, 'd')}
+                          </div>
+                          {isToday && <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mx-auto mt-0.5" />}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* ── Person rows ── */}
+                  {FAMILY_PEOPLE.map((person, pIdx) => (
+                    <div key={person.key}
+                      className={`grid ${pIdx < FAMILY_PEOPLE.length - 1 ? 'border-b border-gray-100' : ''}`}
+                      style={{ gridTemplateColumns: '110px repeat(7, 1fr)', direction: 'ltr' }}>
+
+                      {/* Person label */}
+                      <div className="flex flex-col items-center justify-center py-3 px-2 gap-1.5 border-r border-gray-200"
+                        style={{ background: `${person.color}0D`, borderRight: `4px solid ${person.color}` }}>
+                        {person.photo
+                          ? <img src={person.photo} alt={person.name} className="w-9 h-9 rounded-full object-cover shadow-sm" style={{ border: `2px solid ${person.color}` }} />
+                          : <div className="w-9 h-9 rounded-full flex items-center justify-center text-xl shadow-sm" style={{ background: `${person.color}22`, border: `2px solid ${person.color}` }}>{person.emoji}</div>
+                        }
+                        <div className="text-[11px] font-black text-center leading-tight" style={{ color: person.color, direction: 'rtl' }}>{person.name}</div>
+                      </div>
+
+                      {/* Day cells */}
+                      {weekDates.map((d, dIdx) => {
+                        const dStr    = format(d, 'yyyy-MM-dd')
+                        const dayName = DAY_NAMES[d.getDay()]
+                        const isToday = dStr === todayStr
+                        const cellEvs = weekEvents.filter(e => {
+                          if (e.person !== person.key) return false
+                          if (e.is_recurring && e.recurrence_days) return e.recurrence_days.includes(dayName)
+                          return e.date === dStr
+                        }).sort((a, b) => (a.start_time ?? '').localeCompare(b.start_time ?? ''))
+
+                        return (
+                          <div key={dIdx}
+                            className={`border-r border-gray-100 last:border-r-0 p-1.5 min-h-[90px] flex flex-col gap-1 group/cell ${isToday ? 'bg-amber-50/40' : ''}`}>
+                            {/* Event pills */}
+                            {cellEvs.map(ev => (
+                              <button key={ev.id} onClick={() => openEditEvent(ev)}
+                                className="w-full text-left rounded-lg px-1.5 py-1 hover:brightness-95 transition flex flex-col gap-0.5 shadow-sm"
+                                style={{ background: `${person.color}18`, border: `1px solid ${person.color}44` }}>
+                                {ev.start_time && (
+                                  <span className="font-black text-[10px] opacity-60" dir="ltr" style={{ color: person.color }}>
+                                    {ev.start_time.slice(0, 5)}{ev.end_time ? `–${ev.end_time.slice(0, 5)}` : ''}
+                                  </span>
+                                )}
+                                <span className="font-bold text-[11px] leading-snug truncate" style={{ color: person.color, direction: 'rtl' }}>
+                                  {ev.title}
+                                </span>
+                                {ev.location && (
+                                  <span className="text-[10px] text-gray-400 truncate" style={{ direction: 'rtl' }}>📍 {ev.location}</span>
+                                )}
+                              </button>
+                            ))}
+                            {/* Inline add button — shows on cell hover */}
+                            <button
+                              onClick={() => { setEditingEvent(null); setEventForm({ ...emptyForm(person.key), date: dStr }); setShowModal(true) }}
+                              className="opacity-0 group-hover/cell:opacity-100 mt-auto w-full text-center text-[11px] text-gray-300 hover:text-gray-600 hover:bg-gray-100 rounded-lg py-0.5 transition font-bold"
+                              title={`הוסף אירוע ל${person.name}`}>
+                              +
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {/* ── KIDS TAB ───────────────────────────────────────────────── */}
         {activeTab === 'kids' && (
