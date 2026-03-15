@@ -21,90 +21,122 @@ interface KidTheme {
   bg: string; headerGrad: string; border: string; accent: string
   textColor: string; noteBg: string; noteText: string
   badgeBg: string; badgeText: string; cardBg: string
-  dark?: boolean; label: string; headerPattern?: string
+  dark?: boolean; label: string
+}
+
+interface EventForm {
+  title: string; person: string; date: string
+  start_time: string; end_time: string
+  location: string; notes: string
+  is_recurring: boolean; recurrence_days: string[]
+  meeting_link: string
 }
 
 const DAY_NAMES = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
+const HE_DAYS: Record<string,string> = {
+  sunday:'א׳', monday:'ב׳', tuesday:'ג׳', wednesday:'ד׳', thursday:'ה׳', friday:'ו׳', saturday:'ש׳'
+}
 
 // ── Per-kid theme packs ────────────────────────────────────────────────────
 const THEMES: Record<string, KidTheme[]> = {
   ami: [
-    { // 0 – Princess 👑
-      bg: '#FFF0F3', headerGrad: 'linear-gradient(135deg,#FFB6C1,#FF85A1)',
+    { bg: '#FFF0F3', headerGrad: 'linear-gradient(135deg,#FFB6C1,#FF85A1)',
       border: '#FF85A1', accent: '#E91E63', textColor: '#880E4F',
       noteBg: '#FCE4EC', noteText: '#880E4F',
-      badgeBg: '#F8BBD9', badgeText: '#880E4F', cardBg: '#FFF0F3',
-      label: '👑 פרינסס'
-    },
-    { // 1 – Rainbow 🌈
-      bg: '#FFFDE7', headerGrad: 'linear-gradient(135deg,#FFD54F,#FF8A65)',
+      badgeBg: '#F8BBD9', badgeText: '#880E4F', cardBg: '#FFF0F3', label: '👑 פרינסס' },
+    { bg: '#FFFDE7', headerGrad: 'linear-gradient(135deg,#FFD54F,#FF8A65)',
       border: '#FFB300', accent: '#F57F17', textColor: '#E65100',
       noteBg: '#FFF8E1', noteText: '#E65100',
-      badgeBg: '#FFE082', badgeText: '#BF360C', cardBg: '#FFFDE7',
-      label: '🌈 רינבו'
-    },
-    { // 2 – Unicorn 🦄
-      bg: '#F3E5F5', headerGrad: 'linear-gradient(135deg,#CE93D8,#9575CD)',
+      badgeBg: '#FFE082', badgeText: '#BF360C', cardBg: '#FFFDE7', label: '🌈 רינבו' },
+    { bg: '#F3E5F5', headerGrad: 'linear-gradient(135deg,#CE93D8,#9575CD)',
       border: '#AB47BC', accent: '#7B1FA2', textColor: '#4A148C',
       noteBg: '#EDE7F6', noteText: '#4A148C',
-      badgeBg: '#E1BEE7', badgeText: '#4A148C', cardBg: '#F3E5F5',
-      label: '🦄 יוניקורן'
-    },
+      badgeBg: '#E1BEE7', badgeText: '#4A148C', cardBg: '#F3E5F5', label: '🦄 יוניקורן' },
   ],
   itan: [
-    { // 0 – Sports ⚽
-      bg: '#E8F5E9', headerGrad: 'linear-gradient(135deg,#66BB6A,#1B5E20)',
+    { bg: '#E8F5E9', headerGrad: 'linear-gradient(135deg,#66BB6A,#1B5E20)',
       border: '#43A047', accent: '#1B5E20', textColor: '#1B5E20',
       noteBg: '#F1F8E9', noteText: '#33691E',
-      badgeBg: '#C8E6C9', badgeText: '#1B5E20', cardBg: '#F9FBE7',
-      label: '⚽ ספורט'
-    },
-    { // 1 – Gaming 🎮  (dark)
-      bg: '#1a1a2e', headerGrad: 'linear-gradient(135deg,#6C3483,#1a1a2e)',
+      badgeBg: '#C8E6C9', badgeText: '#1B5E20', cardBg: '#F9FBE7', label: '⚽ ספורט' },
+    { bg: '#1a1a2e', headerGrad: 'linear-gradient(135deg,#6C3483,#1a1a2e)',
       border: '#A855F7', accent: '#D8B4FE', textColor: '#E9D5FF',
       noteBg: '#2d1b4e', noteText: '#DDD6FE',
-      badgeBg: '#4C1D95', badgeText: '#DDD6FE', cardBg: '#16213e',
-      dark: true, label: '🎮 גיימינג'
-    },
-    { // 2 – Chill 😎
-      bg: '#E0F7FA', headerGrad: 'linear-gradient(135deg,#26C6DA,#006064)',
+      badgeBg: '#4C1D95', badgeText: '#DDD6FE', cardBg: '#16213e', dark: true, label: '🎮 גיימינג' },
+    { bg: '#E0F7FA', headerGrad: 'linear-gradient(135deg,#26C6DA,#006064)',
       border: '#00ACC1', accent: '#006064', textColor: '#004D40',
       noteBg: '#E0F2F1', noteText: '#004D40',
-      badgeBg: '#B2EBF2', badgeText: '#00363A', cardBg: '#E0F7FA',
-      label: '😎 צ\'יל'
-    },
+      badgeBg: '#B2EBF2', badgeText: '#00363A', cardBg: '#E0F7FA', label: "😎 צ'יל" },
   ],
   alex: [
-    { // 0 – Music 🎵
-      bg: '#F3E5F5', headerGrad: 'linear-gradient(135deg,#AB47BC,#4A148C)',
+    { bg: '#F3E5F5', headerGrad: 'linear-gradient(135deg,#AB47BC,#4A148C)',
       border: '#8E24AA', accent: '#4A148C', textColor: '#4A148C',
       noteBg: '#EDE7F6', noteText: '#311B92',
-      badgeBg: '#E1BEE7', badgeText: '#4A148C', cardBg: '#FAF5FF',
-      label: '🎵 מוזיקה'
-    },
-    { // 1 – Skate 🛹
-      bg: '#FFF3E0', headerGrad: 'linear-gradient(135deg,#FF7043,#BF360C)',
+      badgeBg: '#E1BEE7', badgeText: '#4A148C', cardBg: '#FAF5FF', label: '🎵 מוזיקה' },
+    { bg: '#FFF3E0', headerGrad: 'linear-gradient(135deg,#FF7043,#BF360C)',
       border: '#FF5722', accent: '#BF360C', textColor: '#BF360C',
       noteBg: '#FBE9E7', noteText: '#BF360C',
-      badgeBg: '#FFCCBC', badgeText: '#BF360C', cardBg: '#FFF8F5',
-      label: '🛹 סקייט'
-    },
-    { // 2 – Minimal 🌊
-      bg: '#ECEFF1', headerGrad: 'linear-gradient(135deg,#546E7A,#263238)',
+      badgeBg: '#FFCCBC', badgeText: '#BF360C', cardBg: '#FFF8F5', label: '🛹 סקייט' },
+    { bg: '#ECEFF1', headerGrad: 'linear-gradient(135deg,#546E7A,#263238)',
       border: '#607D8B', accent: '#263238', textColor: '#263238',
       noteBg: '#F5F5F5', noteText: '#37474F',
-      badgeBg: '#CFD8DC', badgeText: '#263238', cardBg: '#F8FAFB',
-      label: '🌊 מינימל'
-    },
+      badgeBg: '#CFD8DC', badgeText: '#263238', cardBg: '#F8FAFB', label: '🌊 מינימל' },
   ],
 }
 
-// ── Kid base config ────────────────────────────────────────────────────────
+// ── Adult themes ────────────────────────────────────────────────────────────
+const ADULT_THEMES: Record<string, KidTheme> = {
+  assaf: {
+    bg: '#EFF6FF', headerGrad: 'linear-gradient(135deg,#3B82F6,#1E3A8A)',
+    border: '#3B82F6', accent: '#1D4ED8', textColor: '#1E3A8A',
+    noteBg: '#DBEAFE', noteText: '#1E3A8A',
+    badgeBg: '#BFDBFE', badgeText: '#1E3A8A', cardBg: '#EFF6FF', label: '💼 אסף',
+  },
+  danil: {
+    bg: '#F0FDF4', headerGrad: 'linear-gradient(135deg,#4ADE80,#14532D)',
+    border: '#22C55E', accent: '#15803D', textColor: '#14532D',
+    noteBg: '#DCFCE7', noteText: '#14532D',
+    badgeBg: '#BBF7D0', badgeText: '#14532D', cardBg: '#F0FDF4', label: '🌿 דניאל',
+  },
+}
+
+// ── People config ──────────────────────────────────────────────────────────
 const KIDS = [
-  { key: 'ami',  name: 'אמי',  age: 6,  photo: 'https://i.imgur.com/cG8XKwn.jpeg' as string|null, initials: 'א' },
-  { key: 'alex', name: 'אלכס', age: 15, photo: 'https://i.imgur.com/G0j3TD8.jpeg' as string|null, initials: 'א' },
-  { key: 'itan', name: 'איתן', age: 13, photo: 'https://i.imgur.com/5BKBLqt.jpeg' as string|null, initials: 'א' },
+  { key: 'ami',  name: 'אמי',  photo: 'https://i.imgur.com/cG8XKwn.jpeg' as string|null, initials: 'א' },
+  { key: 'alex', name: 'אלכס', photo: 'https://i.imgur.com/G0j3TD8.jpeg' as string|null, initials: 'א' },
+  { key: 'itan', name: 'איתן', photo: 'https://i.imgur.com/5BKBLqt.jpeg' as string|null, initials: 'א' },
 ]
+const ADULTS = [
+  { key: 'assaf', name: 'אסף',   emoji: '💼' },
+  { key: 'danil', name: 'דניאל', emoji: '🌿' },
+]
+const ALL_PEOPLE = [
+  { key: 'ami',   name: 'אמי' },
+  { key: 'alex',  name: 'אלכס' },
+  { key: 'itan',  name: 'איתן' },
+  { key: 'assaf', name: 'אסף' },
+  { key: 'danil', name: 'דניאל' },
+]
+
+type TabKey = 'kids' | 'assaf' | 'danil'
+const TABS = [
+  { key: 'kids'  as TabKey, label: '👨‍👩‍👧 ילדים' },
+  { key: 'assaf' as TabKey, label: '💼 אסף' },
+  { key: 'danil' as TabKey, label: '🌿 דניאל' },
+]
+
+// ── Live clock ─────────────────────────────────────────────────────────────
+function LiveClock() {
+  const [now, setNow] = useState(new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  return (
+    <span dir="ltr" className="font-mono font-black text-gray-700 text-xl tabular-nums">
+      {format(now, 'HH:mm:ss')}
+    </span>
+  )
+}
 
 // ── Avatar component ───────────────────────────────────────────────────────
 function KidAvatar({ kid, theme, onClick }: {
@@ -112,16 +144,11 @@ function KidAvatar({ kid, theme, onClick }: {
 }) {
   const size = 160
   return (
-    <button
-      onClick={onClick}
-      title={`לחץ לשנות עיצוב (${theme.label})`}
+    <button onClick={onClick} title={`לחץ לשנות עיצוב (${theme.label})`}
       className="relative flex-shrink-0 rounded-full focus:outline-none transition-transform active:scale-95 hover:scale-105"
-      style={{ width: size, height: size }}
-    >
-      {/* Glow ring */}
+      style={{ width: size, height: size }}>
       <div className="absolute inset-0 rounded-full"
         style={{ boxShadow: `0 0 0 3px ${theme.border}, 0 0 12px ${theme.border}66` }} />
-      {/* Photo or initials */}
       <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center text-3xl font-black"
         style={{ background: theme.dark ? '#2d2d2d' : theme.bg, border: `3px solid ${theme.border}` }}>
         {kid.photo
@@ -131,7 +158,6 @@ function KidAvatar({ kid, theme, onClick }: {
             </span>
         }
       </div>
-      {/* Theme badge */}
       <div className="absolute -bottom-1 -right-1 text-xs rounded-full px-1.5 py-0.5 font-bold shadow-sm"
         style={{ background: theme.accent, color: '#fff', fontSize: 9 }}>
         {theme.label.split(' ')[0]}
@@ -141,9 +167,11 @@ function KidAvatar({ kid, theme, onClick }: {
 }
 
 // ── EventCard ──────────────────────────────────────────────────────────────
-function EventCard({ event, theme, onToggle, onDelete }: {
+function EventCard({ event, theme, onToggle, onDelete, onEdit }: {
   event: Event; theme: KidTheme
-  onToggle: (e: Event) => void; onDelete: (id: string) => void
+  onToggle: (e: Event) => void
+  onDelete: (id: string) => void
+  onEdit: (e: Event) => void
 }) {
   const done = !!event.completed
   return (
@@ -154,49 +182,45 @@ function EventCard({ event, theme, onToggle, onDelete }: {
         borderLeft: done ? undefined : `4px solid ${theme.border}`,
         opacity: done ? 0.6 : 1,
       }}>
-
       <div className="flex items-start gap-2 flex-row-reverse">
         <input type="checkbox" checked={done} onChange={() => onToggle(event)}
           className="mt-1 w-4 h-4 flex-shrink-0 cursor-pointer rounded"
           style={{ accentColor: theme.accent }} />
-
         <div className="flex-1 min-w-0 text-right">
-          {/* Time + badges */}
-          <div className="flex flex-wrap gap-1 flex-row-reverse mb-1">
-            {event.start_time && (
-              <span className="text-xs px-2 py-0.5 rounded-full font-bold" dir="ltr"
-                style={{ background: theme.badgeBg, color: theme.badgeText }}>
-                ⏰ {event.start_time.slice(0,5)}{event.end_time ? `–${event.end_time.slice(0,5)}` : ''}
-              </span>
-            )}
-            {event.is_recurring && (
-              <span className="text-xs px-2 py-0.5 rounded-full font-bold"
-                style={{ background: theme.badgeBg, color: theme.badgeText }}>🔄 קבוע</span>
-            )}
-          </div>
-
+          {/* Time badges */}
+          {(event.start_time || event.is_recurring) && (
+            <div className="flex flex-wrap gap-1 flex-row-reverse mb-1">
+              {event.start_time && (
+                <span className="text-sm px-2.5 py-0.5 rounded-full font-black" dir="ltr"
+                  style={{ background: theme.badgeBg, color: theme.badgeText }}>
+                  ⏰ {event.start_time.slice(0,5)}{event.end_time ? ` – ${event.end_time.slice(0,5)}` : ''}
+                </span>
+              )}
+              {event.is_recurring && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-bold"
+                  style={{ background: theme.badgeBg, color: theme.badgeText }}>🔄 קבוע</span>
+              )}
+            </div>
+          )}
           {/* Title */}
-          <div className={`font-black text-base leading-snug mb-1 ${done ? 'line-through' : ''}`}
-            style={{ color: done ? '#aaa' : theme.textColor, fontSize: 15 }}>
+          <div className={`font-black leading-snug mb-1 ${done ? 'line-through' : ''}`}
+            style={{ color: done ? '#aaa' : theme.textColor, fontSize: 16 }}>
             {event.title}
           </div>
-
           {/* Location */}
           {event.location && (
-            <div className="text-xs flex items-center gap-1 flex-row-reverse mb-1"
+            <div className="text-sm flex items-center gap-1 flex-row-reverse mb-1"
               style={{ color: done ? '#bbb' : theme.accent }}>
               <span>📍</span><span>{event.location}</span>
             </div>
           )}
-
           {/* Notes */}
           {event.notes && (
-            <div className="text-xs rounded-xl px-2.5 py-1.5 mt-1 text-right leading-relaxed"
+            <div className="text-sm rounded-xl px-2.5 py-1.5 mt-1 text-right leading-relaxed"
               style={{ background: theme.noteBg, color: done ? '#bbb' : theme.noteText }}>
               <span className="font-bold">📝 </span>{event.notes}
             </div>
           )}
-
           {/* Meeting link */}
           {event.meeting_link && !done && (
             <a href={event.meeting_link} target="_blank" rel="noopener noreferrer"
@@ -207,12 +231,203 @@ function EventCard({ event, theme, onToggle, onDelete }: {
             </a>
           )}
         </div>
+        {/* Action buttons */}
+        <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+          <button onClick={() => onEdit(event)}
+            className="text-gray-300 hover:text-blue-500 text-xs" title="ערוך">✏️</button>
+          <button onClick={() => onDelete(event.id)}
+            className="text-gray-300 hover:text-red-500 text-xs" title="מחק">🗑️</button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
-        {/* Delete */}
-        <button onClick={() => onDelete(event.id)}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-500 text-xs flex-shrink-0 mt-0.5">
-          🗑️
-        </button>
+// ── ReminderBox ────────────────────────────────────────────────────────────
+function ReminderBox({ theme, reminders, newVal, loading,
+  onNewChange, onAdd, onDelete }: {
+  theme: KidTheme; reminders: Reminder[]; newVal: string; loading: boolean
+  onNewChange: (v: string) => void; onAdd: () => void; onDelete: (id: string) => void
+}) {
+  return (
+    <div className="mx-3 mb-3 rounded-2xl overflow-hidden"
+      style={{ border: `1.5px solid ${theme.border}55`, background: theme.dark ? '#1e1e2e' : 'white' }}>
+      <div className="px-3 py-2 flex items-center gap-1.5 flex-row-reverse"
+        style={{ background: theme.headerGrad, opacity: 0.9 }}>
+        <span className="text-sm">📌</span>
+        <span className="text-xs font-black text-white flex-1 text-right">תזכורות</span>
+        {reminders.length > 0 && (
+          <span className="text-xs rounded-full w-5 h-5 flex items-center justify-center font-black text-white"
+            style={{ background: 'rgba(0,0,0,0.3)', fontSize: 10 }}>
+            {reminders.length}
+          </span>
+        )}
+      </div>
+      <div className="px-3 py-2">
+        {!loading && (
+          <>
+            {reminders.length === 0 && (
+              <p className="text-xs text-center py-1" style={{ color: theme.dark ? '#555' : '#ccc' }}>אין תזכורות</p>
+            )}
+            <ul className="space-y-1 mb-2">
+              {reminders.map(r => (
+                <li key={r.id} className="flex items-center gap-1.5 flex-row-reverse">
+                  <input type="checkbox" checked={false} onChange={() => onDelete(r.id)}
+                    className="w-3.5 h-3.5 flex-shrink-0 cursor-pointer" style={{ accentColor: theme.accent }} />
+                  <span className="flex-1 text-xs text-right"
+                    style={{ color: theme.dark ? '#ccc' : theme.textColor }}>{r.text}</span>
+                  <button onClick={() => onDelete(r.id)}
+                    className="text-gray-300 hover:text-red-400 text-sm flex-shrink-0 leading-none">×</button>
+                </li>
+              ))}
+            </ul>
+            <div className="flex gap-1.5 flex-row-reverse">
+              <input type="text" value={newVal} onChange={e => onNewChange(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && onAdd()}
+                placeholder="הוסף תזכורת..." dir="rtl"
+                className="flex-1 border rounded-xl px-2.5 py-1.5 text-xs focus:outline-none min-w-0"
+                style={{ borderColor: theme.border + '88', background: theme.dark ? '#2a2a3a' : 'white', color: theme.dark ? '#eee' : '#333' }} />
+              <button onClick={onAdd} disabled={!newVal.trim()}
+                className="text-white text-xs font-black px-3 py-1.5 rounded-xl disabled:opacity-40 transition shadow-sm"
+                style={{ background: theme.accent }}>+</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Event Modal ────────────────────────────────────────────────────────────
+function EventModal({ form, editing, onClose, onSave, onChange }: {
+  form: EventForm; editing: boolean
+  onClose: () => void
+  onSave: () => void
+  onChange: (f: Partial<EventForm>) => void
+}) {
+  const inputCls = "w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white text-right"
+  const labelCls = "block text-xs font-bold text-gray-500 mb-1 text-right"
+
+  function toggleDay(day: string) {
+    const days = form.recurrence_days.includes(day)
+      ? form.recurrence_days.filter(d => d !== day)
+      : [...form.recurrence_days, day]
+    onChange({ recurrence_days: days })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" dir="rtl">
+        {/* Modal header */}
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-xl font-black text-gray-900">
+            {editing ? '✏️ עריכת אירוע' : '➕ הוספת אירוע'}
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+        </div>
+
+        <div className="px-6 py-4 space-y-4">
+          {/* Person */}
+          <div>
+            <label className={labelCls}>👤 עבור מי</label>
+            <select value={form.person} onChange={e => onChange({ person: e.target.value })}
+              className={inputCls}>
+              <option value="">— בחר —</option>
+              {ALL_PEOPLE.map(p => <option key={p.key} value={p.key}>{p.name}</option>)}
+            </select>
+          </div>
+
+          {/* Title */}
+          <div>
+            <label className={labelCls}>📝 כותרת *</label>
+            <input type="text" value={form.title} onChange={e => onChange({ title: e.target.value })}
+              placeholder="שם האירוע..." className={inputCls} />
+          </div>
+
+          {/* Date */}
+          <div>
+            <label className={labelCls}>📅 תאריך</label>
+            <input type="date" value={form.date} onChange={e => onChange({ date: e.target.value })}
+              className={inputCls} dir="ltr" />
+          </div>
+
+          {/* Times */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>⏰ שעת התחלה</label>
+              <input type="time" value={form.start_time} onChange={e => onChange({ start_time: e.target.value })}
+                className={inputCls} dir="ltr" />
+            </div>
+            <div>
+              <label className={labelCls}>⏰ שעת סיום</label>
+              <input type="time" value={form.end_time} onChange={e => onChange({ end_time: e.target.value })}
+                className={inputCls} dir="ltr" />
+            </div>
+          </div>
+
+          {/* Location */}
+          <div>
+            <label className={labelCls}>📍 מיקום</label>
+            <input type="text" value={form.location} onChange={e => onChange({ location: e.target.value })}
+              placeholder="כתובת / שם מקום..." className={inputCls} />
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className={labelCls}>📋 פרטים נוספים</label>
+            <textarea value={form.notes} onChange={e => onChange({ notes: e.target.value })}
+              placeholder="מה להביא, הוראות, הערות..." rows={3}
+              className={inputCls + ' resize-none'} />
+          </div>
+
+          {/* Meeting link */}
+          <div>
+            <label className={labelCls}>🔗 קישור לפגישה (אופציונלי)</label>
+            <input type="url" value={form.meeting_link} onChange={e => onChange({ meeting_link: e.target.value })}
+              placeholder="https://..." className={inputCls} dir="ltr" />
+          </div>
+
+          {/* Recurring */}
+          <div className="rounded-2xl border-2 border-gray-100 p-3">
+            <label className="flex items-center gap-2 cursor-pointer flex-row-reverse justify-end">
+              <span className="text-sm font-bold text-gray-700">אירוע קבוע (חוזר)</span>
+              <input type="checkbox" checked={form.is_recurring}
+                onChange={e => onChange({ is_recurring: e.target.checked })}
+                className="w-5 h-5 cursor-pointer" style={{ accentColor: '#3B82F6' }} />
+            </label>
+            {form.is_recurring && (
+              <div className="mt-3">
+                <div className="text-xs font-bold text-gray-500 mb-2 text-right">ימי חזרה:</div>
+                <div className="flex flex-wrap gap-1.5 flex-row-reverse">
+                  {DAY_NAMES.map(day => (
+                    <button key={day} onClick={() => toggleDay(day)}
+                      className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all ${
+                        form.recurrence_days.includes(day)
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                      }`}>
+                      {HE_DAYS[day]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Modal footer */}
+        <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-row-reverse">
+          <button onClick={onSave}
+            disabled={!form.title.trim() || !form.person}
+            className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-black py-2.5 rounded-2xl transition shadow-md text-sm">
+            {editing ? '💾 שמור שינויים' : '✅ הוסף אירוע'}
+          </button>
+          <button onClick={onClose}
+            className="px-5 py-2.5 rounded-2xl border-2 border-gray-200 text-gray-600 font-bold text-sm hover:bg-gray-50 transition">
+            ביטול
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -221,16 +436,27 @@ function EventCard({ event, theme, onToggle, onDelete }: {
 // ── Main page ─────────────────────────────────────────────────────────────
 export default function KidsSchedulePage() {
   const [selectedDate, setSelectedDate] = useState(() => new Date())
+  const [activeTab, setActiveTab] = useState<TabKey>('kids')
   const [events, setEvents] = useState<Event[]>([])
   const [reminders, setReminders] = useState<Reminder[]>([])
-  const [newReminder, setNewReminder] = useState<Record<string,string>>({ami:'',alex:'',itan:''})
+  const [newReminder, setNewReminder] = useState<Record<string,string>>(
+    { ami:'', alex:'', itan:'', assaf:'', danil:'' }
+  )
+  const [newGeneralReminder, setNewGeneralReminder] = useState('')
   const [loadingEvents, setLoadingEvents] = useState(true)
   const [loadingReminders, setLoadingReminders] = useState(true)
-  const [lunchMenu, setLunchMenu] = useState('')
-  const [lunchEdit, setLunchEdit] = useState(false)
-  const [lunchDraft, setLunchDraft] = useState('')
-  const [savingLunch, setSavingLunch] = useState(false)
   const [kidThemeIdx, setKidThemeIdx] = useState<Record<string,number>>({ami:0,alex:0,itan:0})
+
+  // ── Event modal state ──────────────────────────────────────────────────
+  const [showModal, setShowModal] = useState(false)
+  const [editingEvent, setEditingEvent] = useState<Event|null>(null)
+  const [savingEvent, setSavingEvent] = useState(false)
+  const emptyForm = useCallback((person = ''): EventForm => ({
+    title:'', person, date: format(selectedDate,'yyyy-MM-dd'),
+    start_time:'', end_time:'', location:'', notes:'',
+    is_recurring: false, recurrence_days: [], meeting_link:''
+  }), [selectedDate])
+  const [eventForm, setEventForm] = useState<EventForm>(() => emptyForm())
 
   const dateStr = format(selectedDate, 'yyyy-MM-dd')
   const dayOfWeek = DAY_NAMES[selectedDate.getDay()]
@@ -254,21 +480,60 @@ export default function KidsSchedulePage() {
     } finally { setLoadingReminders(false) }
   }, [dateStr])
 
-  const loadLunch = useCallback(async () => {
-    const res = await fetch(`/api/lunch?date=${dateStr}`)
-    if (res.ok) { const d = await res.json(); setLunchMenu(d?.menu||''); setLunchDraft(d?.menu||'') }
-    else { setLunchMenu(''); setLunchDraft('') }
-    setLunchEdit(false)
-  }, [dateStr])
+  useEffect(() => { loadEvents(); loadReminders() }, [loadEvents, loadReminders])
 
-  useEffect(() => { loadEvents(); loadReminders(); loadLunch() }, [loadEvents, loadReminders, loadLunch])
+  // ── Event CRUD ─────────────────────────────────────────────────────────
+  function openAddEvent(person = '') {
+    setEditingEvent(null)
+    setEventForm(emptyForm(person))
+    setShowModal(true)
+  }
 
-  async function saveLunch() {
-    setSavingLunch(true)
-    const res = await fetch('/api/lunch', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ date: dateStr, menu: lunchDraft }) })
-    if (res.ok) { setLunchMenu(lunchDraft); setLunchEdit(false) }
-    setSavingLunch(false)
+  function openEditEvent(event: Event) {
+    setEditingEvent(event)
+    setEventForm({
+      title: event.title, person: event.person, date: event.date,
+      start_time: event.start_time||'', end_time: event.end_time||'',
+      location: event.location||'', notes: event.notes||'',
+      is_recurring: event.is_recurring,
+      recurrence_days: event.recurrence_days||[],
+      meeting_link: event.meeting_link||''
+    })
+    setShowModal(true)
+  }
+
+  async function saveEvent() {
+    if (!eventForm.title.trim() || !eventForm.person) return
+    setSavingEvent(true)
+    try {
+      const payload = {
+        ...eventForm,
+        start_time: eventForm.start_time || null,
+        end_time: eventForm.end_time || null,
+        location: eventForm.location || null,
+        notes: eventForm.notes || null,
+        meeting_link: eventForm.meeting_link || null,
+        recurrence_days: eventForm.is_recurring ? eventForm.recurrence_days : null,
+      }
+      if (editingEvent) {
+        const res = await fetch(`/api/events?id=${editingEvent.id}`, {
+          method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+        })
+        if (res.ok) {
+          const updated = await res.json()
+          setEvents(prev => prev.map(e => e.id === editingEvent.id ? {...e, ...updated} : e))
+        }
+      } else {
+        const res = await fetch('/api/events', {
+          method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+        })
+        if (res.ok) {
+          const created = await res.json()
+          if (!created.duplicate) setEvents(prev => [...prev, created])
+        }
+      }
+      setShowModal(false)
+    } finally { setSavingEvent(false) }
   }
 
   async function toggleEvent(event: Event) {
@@ -282,6 +547,7 @@ export default function KidsSchedulePage() {
     await fetch(`/api/events?id=${id}`, { method:'DELETE' })
   }
 
+  // ── Reminders ──────────────────────────────────────────────────────────
   async function addReminder(person: string) {
     const text = newReminder[person]?.trim(); if (!text) return
     const res = await fetch('/api/reminders', { method:'POST',
@@ -290,12 +556,21 @@ export default function KidsSchedulePage() {
     if (res.ok) { const data = await res.json(); setReminders(prev => [...prev, data]); setNewReminder(prev=>({...prev,[person]:''})) }
   }
 
+  async function addGeneralReminder() {
+    const text = newGeneralReminder.trim(); if (!text) return
+    const res = await fetch('/api/reminders', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ date: dateStr, person: null, text, completed: false }) })
+    if (res.ok) { const data = await res.json(); setReminders(prev => [...prev, data]); setNewGeneralReminder('') }
+  }
+
   async function deleteReminder(id: string) {
     setReminders(prev => prev.filter(r => r.id !== id))
     await fetch(`/api/reminders?id=${id}`, { method:'DELETE' })
   }
 
-  function getKidEvents(key: string) {
+  // ── Helpers ────────────────────────────────────────────────────────────
+  function getPersonEvents(key: string) {
     return events.filter(e => {
       if (e.person !== key) return false
       if (e.is_recurring && e.recurrence_days) return e.recurrence_days.includes(dayOfWeek)
@@ -303,15 +578,18 @@ export default function KidsSchedulePage() {
     }).sort((a,b) => (a.start_time??'').localeCompare(b.start_time??''))
   }
 
-  function getKidReminders(key: string) {
-    return reminders.filter(r => r.person === key || (!r.person && r.date === dateStr))
+  function getPersonReminders(key: string) {
+    return reminders.filter(r => r.person === key)
+  }
+
+  function getGeneralReminders() {
+    return reminders.filter(r => !r.person)
   }
 
   const dateLabel = format(selectedDate, 'EEEE, d בMMMM yyyy', { locale: he })
 
   return (
     <>
-      {/* ── Global styles ─────────────────────────────────────────────── */}
       <style>{`
         body { background: #F0F4F8; }
         @media print {
@@ -325,70 +603,55 @@ export default function KidsSchedulePage() {
         @media screen { .print-table { display: none; } }
       `}</style>
 
+      {/* ── Event modal ─────────────────────────────────────────────────── */}
+      {showModal && (
+        <EventModal
+          form={eventForm} editing={!!editingEvent}
+          onClose={() => setShowModal(false)}
+          onSave={saveEvent}
+          onChange={patch => setEventForm(prev => ({ ...prev, ...patch }))}
+        />
+      )}
+
       {/* ══════════════════════════════════════════════════════════════════
-          PRINT LAYOUT — hidden on screen, shown on print
+          PRINT LAYOUT
       ══════════════════════════════════════════════════════════════════ */}
       <div className="print-table w-full">
         <div style={{ fontFamily: 'Arial, sans-serif', direction: 'rtl', fontSize: 15 }}>
-
-          {/* Print header */}
           <div style={{ textAlign: 'center', marginBottom: 6, borderBottom: '2.5px solid #000', paddingBottom: 5 }}>
             <div style={{ fontSize: 24, fontWeight: 900 }}>
               📅 לו&quot;ז משפחת אלוני — {format(selectedDate, 'd.M.yyyy', { locale: he })}
             </div>
             <div style={{ fontSize: 14, color: '#444', marginTop: 2 }}>{dateLabel}</div>
           </div>
-
-          {/* 3-column grid */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
             {KIDS.map(kid => {
-              const evs = getKidEvents(kid.key)
-              const remds = getKidReminders(kid.key)
+              const evs = getPersonEvents(kid.key)
+              const remds = getPersonReminders(kid.key)
               return (
                 <div key={kid.key} style={{ border: '2px solid #222', borderRadius: 6, overflow: 'hidden' }}>
-                  {/* Column header */}
                   <div style={{ background: '#222', color: '#fff', padding: '6px 10px', textAlign: 'center' }}>
                     <div style={{ fontSize: 20, fontWeight: 900 }}>{kid.name}</div>
                     <div style={{ fontSize: 12, opacity: 0.75, marginTop: 1 }}>
                       {evs.length === 0 ? 'יום חופשי' : `${evs.length} פעילויות`}
                     </div>
                   </div>
-
-                  {/* Events */}
                   <div style={{ padding: '6px 8px', minHeight: 40 }}>
                     {evs.length === 0 ? (
                       <div style={{ color: '#bbb', textAlign: 'center', fontSize: 14, padding: '8px 0' }}>—</div>
                     ) : evs.map((ev, i) => (
-                      <div key={ev.id} style={{
-                        marginBottom: i < evs.length-1 ? 7 : 0,
-                        paddingBottom: i < evs.length-1 ? 7 : 0,
-                        borderBottom: i < evs.length-1 ? '1px dashed #ccc' : 'none'
-                      }}>
+                      <div key={ev.id} style={{ marginBottom: i < evs.length-1 ? 7 : 0, paddingBottom: i < evs.length-1 ? 7 : 0, borderBottom: i < evs.length-1 ? '1px dashed #ccc' : 'none' }}>
                         <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2 }}>{ev.title}</div>
-                        {ev.start_time && (
-                          <div style={{ fontSize: 13, color: '#333', marginTop: 2 }} dir="ltr">
-                            ⏰ {ev.start_time.slice(0,5)}{ev.end_time ? `–${ev.end_time.slice(0,5)}` : ''}
-                          </div>
-                        )}
-                        {ev.location && (
-                          <div style={{ fontSize: 13, color: '#333', marginTop: 1 }}>📍 {ev.location}</div>
-                        )}
-                        {ev.notes && (
-                          <div style={{ fontSize: 12, color: '#555', marginTop: 2, background: '#f5f5f5', padding: '2px 5px', borderRadius: 3 }}>
-                            📝 {ev.notes}
-                          </div>
-                        )}
+                        {ev.start_time && <div style={{ fontSize: 13, color: '#333', marginTop: 2 }} dir="ltr">⏰ {ev.start_time.slice(0,5)}{ev.end_time ? `–${ev.end_time.slice(0,5)}` : ''}</div>}
+                        {ev.location && <div style={{ fontSize: 13, color: '#333', marginTop: 1 }}>📍 {ev.location}</div>}
+                        {ev.notes && <div style={{ fontSize: 12, color: '#555', marginTop: 2, background: '#f5f5f5', padding: '2px 5px', borderRadius: 3 }}>📝 {ev.notes}</div>}
                       </div>
                     ))}
                   </div>
-
-                  {/* Reminders */}
                   {remds.length > 0 && (
                     <div style={{ borderTop: '1.5px solid #ccc', padding: '5px 8px', background: '#fafafa' }}>
                       <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 3 }}>📌 תזכורות:</div>
-                      {remds.map(r => (
-                        <div key={r.id} style={{ fontSize: 13, marginBottom: 1 }}>• {r.text}</div>
-                      ))}
+                      {remds.map(r => <div key={r.id} style={{ fontSize: 13, marginBottom: 1 }}>• {r.text}</div>)}
                     </div>
                   )}
                 </div>
@@ -404,11 +667,17 @@ export default function KidsSchedulePage() {
       <div className="screen-only max-w-6xl mx-auto px-3 pb-12">
 
         {/* ── Top bar ──────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between mb-5 no-print gap-2 flex-row-reverse flex-wrap">
-          <button onClick={() => window.print()}
-            className="bg-gray-800 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-gray-600 transition shadow-md whitespace-nowrap">
-            🖨️ הדפס
-          </button>
+        <div className="flex items-center justify-between mb-4 no-print gap-2 flex-row-reverse flex-wrap">
+          <div className="flex gap-2">
+            <button onClick={() => window.print()}
+              className="bg-gray-800 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-gray-600 transition shadow-md whitespace-nowrap">
+              🖨️ הדפס
+            </button>
+            <button onClick={() => openAddEvent(activeTab !== 'kids' ? activeTab : '')}
+              className="bg-blue-600 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-blue-700 transition shadow-md whitespace-nowrap">
+              ➕ הוסף אירוע
+            </button>
+          </div>
           <div className="flex items-center gap-2 flex-row-reverse flex-wrap">
             <button onClick={() => setSelectedDate(d => addDays(d, 1))}
               className="w-10 h-10 rounded-full bg-white border-2 border-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-600 shadow text-xl font-bold">›</button>
@@ -424,111 +693,180 @@ export default function KidsSchedulePage() {
           </div>
         </div>
 
-        {/* ── Date header ──────────────────────────────────────────────── */}
-        <div className="text-center mb-6 no-print">
+        {/* ── Date + Clock header ───────────────────────────────────────── */}
+        <div className="text-center mb-4 no-print">
           <div className="inline-block bg-white rounded-3xl shadow-md px-8 py-4 border border-gray-100">
             <h1 className="text-2xl sm:text-3xl font-black text-gray-900">
-              📅 לו&quot;ז ילדים — {format(selectedDate, 'd בMMMM', { locale: he })}
+              📅 לו&quot;ז משפחת אלוני — {format(selectedDate, 'd בMMMM', { locale: he })}
             </h1>
             <p className="text-sm text-gray-500 mt-1">{dateLabel}</p>
+            <div className="mt-2 flex items-center justify-center gap-2">
+              <span className="text-xs text-gray-400">שעה עכשיו:</span>
+              <LiveClock />
+            </div>
           </div>
         </div>
 
-        {/* ── Kid columns ──────────────────────────────────────────────── */}
-        {loadingEvents ? (
-          <div className="text-center py-16 text-gray-400 text-xl">⏳ טוען...</div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {KIDS.map(kid => {
-              const theme = THEMES[kid.key][kidThemeIdx[kid.key]]
-              const evs = getKidEvents(kid.key)
-              const kidReminders = getKidReminders(kid.key)
+        {/* ── Tab bar ───────────────────────────────────────────────────── */}
+        <div className="flex gap-2 mb-5 justify-center no-print">
+          {TABS.map(tab => (
+            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+              className={`px-5 py-2.5 rounded-2xl font-bold text-sm transition-all shadow-sm ${
+                activeTab === tab.key
+                  ? 'bg-gray-800 text-white shadow-md scale-105'
+                  : 'bg-white text-gray-600 hover:bg-gray-50 border-2 border-gray-200'
+              }`}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-              return (
-                <div key={kid.key} className="rounded-3xl overflow-hidden shadow-lg flex flex-col"
-                  style={{ background: theme.bg, border: `2px solid ${theme.border}44` }}>
-
-                  {/* ── Kid header ─────────────────────────────────────── */}
-                  <div className="px-5 pt-5 pb-4 flex items-center gap-4 flex-row-reverse"
-                    style={{ background: theme.headerGrad }}>
-                    <KidAvatar kid={kid} theme={theme} onClick={() => cycleTheme(kid.key)} />
-                    <div className="flex-1 text-right">
-                      <div className="font-black text-2xl text-white drop-shadow">{kid.name}</div>
-                      <div className="text-white/70 text-xs mt-0.5">
-                        {evs.length === 0 ? 'יום חופשי 🎉' : `${evs.length} פעילויות היום`}
+        {/* ── KIDS TAB ─────────────────────────────────────────────────── */}
+        {activeTab === 'kids' && (
+          loadingEvents ? (
+            <div className="text-center py-16 text-gray-400 text-xl">⏳ טוען...</div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {KIDS.map(kid => {
+                const theme = THEMES[kid.key][kidThemeIdx[kid.key]]
+                const evs = getPersonEvents(kid.key)
+                const kidReminders = getPersonReminders(kid.key)
+                return (
+                  <div key={kid.key} className="rounded-3xl overflow-hidden shadow-lg flex flex-col"
+                    style={{ background: theme.bg, border: `2px solid ${theme.border}44` }}>
+                    {/* Header */}
+                    <div className="px-5 pt-5 pb-4 flex items-center gap-4 flex-row-reverse"
+                      style={{ background: theme.headerGrad }}>
+                      <KidAvatar kid={kid} theme={theme} onClick={() => cycleTheme(kid.key)} />
+                      <div className="flex-1 text-right">
+                        <div className="font-black text-2xl text-white drop-shadow">{kid.name}</div>
+                        <div className="text-white/70 text-xs mt-0.5">
+                          {evs.length === 0 ? 'יום חופשי 🎉' : `${evs.length} פעילויות היום`}
+                        </div>
+                        <div className="text-white/60 text-xs mt-1">לחץ על התמונה לשנות עיצוב</div>
+                        {/* Add event button */}
+                        <button onClick={() => openAddEvent(kid.key)}
+                          className="mt-2 text-xs font-black px-3 py-1 rounded-xl transition"
+                          style={{ background: 'rgba(255,255,255,0.25)', color: 'white' }}>
+                          ➕ הוסף אירוע
+                        </button>
                       </div>
-                      <div className="text-white/60 text-xs mt-1">לחץ על התמונה לשנות עיצוב</div>
                     </div>
-                  </div>
-
-                  {/* ── Events ─────────────────────────────────────────── */}
-                  <div className="flex-1 px-3 pt-3 pb-1">
-                    {evs.length === 0 ? (
-                      <div className="text-center py-8 text-4xl opacity-30">🎈</div>
-                    ) : evs.map(ev => (
-                      <EventCard key={ev.id} event={ev} theme={theme} onToggle={toggleEvent} onDelete={deleteEvent} />
-                    ))}
-                  </div>
-
-                  {/* ── Reminders ──────────────────────────────────────── */}
-                  <div className="mx-3 mb-3 rounded-2xl overflow-hidden"
-                    style={{ border: `1.5px solid ${theme.border}55`, background: theme.dark ? '#1e1e2e' : 'white' }}>
-                    <div className="px-3 py-2 flex items-center gap-1.5 flex-row-reverse"
-                      style={{ background: theme.headerGrad, opacity: 0.85 }}>
-                      <span className="text-sm">📌</span>
-                      <span className="text-xs font-black text-white">תזכורות</span>
-                      {kidReminders.length > 0 && (
-                        <span className="text-xs rounded-full w-5 h-5 flex items-center justify-center font-black text-white"
-                          style={{ background: 'rgba(0,0,0,0.3)', fontSize: 10 }}>
-                          {kidReminders.length}
-                        </span>
-                      )}
+                    {/* Events */}
+                    <div className="flex-1 px-3 pt-3 pb-1">
+                      {evs.length === 0 ? (
+                        <div className="text-center py-8 text-4xl opacity-30">🎈</div>
+                      ) : evs.map(ev => (
+                        <EventCard key={ev.id} event={ev} theme={theme}
+                          onToggle={toggleEvent} onDelete={deleteEvent} onEdit={openEditEvent} />
+                      ))}
                     </div>
-                    <div className="px-3 py-2">
-                      {!loadingReminders && (
-                        <>
-                          {kidReminders.length === 0 && (
-                            <p className="text-xs text-center py-1" style={{ color: theme.dark ? '#555' : '#ccc' }}>אין תזכורות</p>
-                          )}
-                          <ul className="space-y-1 mb-2">
-                            {kidReminders.map(r => (
-                              <li key={r.id} className="flex items-center gap-1.5 flex-row-reverse">
-                                <input type="checkbox" checked={false} onChange={() => deleteReminder(r.id)}
-                                  className="w-3.5 h-3.5 flex-shrink-0 cursor-pointer"
-                                  style={{ accentColor: theme.accent }} />
-                                <span className="flex-1 text-xs text-right"
-                                  style={{ color: theme.dark ? '#ccc' : theme.textColor }}>{r.text}</span>
-                                <button onClick={() => deleteReminder(r.id)}
-                                  className="text-gray-300 hover:text-red-400 text-sm flex-shrink-0 leading-none">×</button>
-                              </li>
-                            ))}
-                          </ul>
-                          <div className="flex gap-1.5 flex-row-reverse">
-                            <input type="text" value={newReminder[kid.key]||''}
-                              onChange={e => setNewReminder(p=>({...p,[kid.key]:e.target.value}))}
-                              onKeyDown={e => e.key==='Enter' && addReminder(kid.key)}
-                              placeholder="הוסף תזכורת..." dir="rtl"
-                              className="flex-1 border rounded-xl px-2.5 py-1.5 text-xs focus:outline-none min-w-0"
-                              style={{
-                                borderColor: theme.border + '88',
-                                background: theme.dark ? '#2a2a3a' : 'white',
-                                color: theme.dark ? '#eee' : '#333'
-                              }} />
-                            <button onClick={() => addReminder(kid.key)}
-                              disabled={!newReminder[kid.key]?.trim()}
-                              className="text-white text-xs font-black px-3 py-1.5 rounded-xl disabled:opacity-40 transition shadow-sm"
-                              style={{ background: theme.accent }}>+</button>
-                          </div>
-                        </>
-                      )}
-                    </div>
+                    {/* Reminders */}
+                    <ReminderBox theme={theme} reminders={kidReminders}
+                      newVal={newReminder[kid.key]||''} loading={loadingReminders}
+                      onNewChange={v => setNewReminder(p=>({...p,[kid.key]:v}))}
+                      onAdd={() => addReminder(kid.key)} onDelete={deleteReminder} />
                   </div>
-
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )
         )}
+
+        {/* ── ADULT TABS ────────────────────────────────────────────────── */}
+        {(activeTab === 'assaf' || activeTab === 'danil') && (() => {
+          const adult = ADULTS.find(a => a.key === activeTab)!
+          const theme = ADULT_THEMES[activeTab]
+          const evs = getPersonEvents(adult.key)
+          const adultReminders = getPersonReminders(adult.key)
+          return (
+            <div className="max-w-2xl mx-auto">
+              <div className="rounded-3xl overflow-hidden shadow-lg flex flex-col"
+                style={{ background: theme.bg, border: `2px solid ${theme.border}44` }}>
+                {/* Header */}
+                <div className="px-6 py-5 flex items-center gap-5 flex-row-reverse"
+                  style={{ background: theme.headerGrad }}>
+                  <div className="w-20 h-20 rounded-full flex items-center justify-center text-4xl flex-shrink-0"
+                    style={{ background: 'rgba(255,255,255,0.2)', border: '3px solid rgba(255,255,255,0.5)' }}>
+                    {adult.emoji}
+                  </div>
+                  <div className="flex-1 text-right">
+                    <div className="font-black text-3xl text-white drop-shadow">{adult.name}</div>
+                    <div className="text-white/70 text-sm mt-1">
+                      {evs.length === 0 ? 'יום חופשי ✨' : `${evs.length} אירועים היום`}
+                    </div>
+                    <button onClick={() => openAddEvent(adult.key)}
+                      className="mt-2 text-xs font-black px-3 py-1 rounded-xl transition"
+                      style={{ background: 'rgba(255,255,255,0.25)', color: 'white' }}>
+                      ➕ הוסף אירוע
+                    </button>
+                  </div>
+                </div>
+                {/* Events */}
+                <div className="flex-1 px-4 pt-4 pb-2">
+                  {loadingEvents ? (
+                    <div className="text-center py-8 text-gray-400">⏳ טוען...</div>
+                  ) : evs.length === 0 ? (
+                    <div className="text-center py-10 text-5xl opacity-20">✨</div>
+                  ) : evs.map(ev => (
+                    <EventCard key={ev.id} event={ev} theme={theme}
+                      onToggle={toggleEvent} onDelete={deleteEvent} onEdit={openEditEvent} />
+                  ))}
+                </div>
+                {/* Reminders */}
+                <ReminderBox theme={theme} reminders={adultReminders}
+                  newVal={newReminder[adult.key]||''} loading={loadingReminders}
+                  onNewChange={v => setNewReminder(p=>({...p,[adult.key]:v}))}
+                  onAdd={() => addReminder(adult.key)} onDelete={deleteReminder} />
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* ── GENERAL REMINDERS — always visible ───────────────────────── */}
+        <div className="mt-6 max-w-2xl mx-auto no-print">
+          <div className="bg-white rounded-2xl shadow-md overflow-hidden border border-amber-100">
+            <div className="px-4 py-3 flex items-center gap-2 flex-row-reverse"
+              style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
+              <span className="text-lg">📋</span>
+              <span className="font-black text-white text-sm flex-1 text-right">תזכורות כלליות</span>
+              {getGeneralReminders().length > 0 && (
+                <span className="bg-white/30 text-white text-xs rounded-full w-6 h-6 flex items-center justify-center font-black">
+                  {getGeneralReminders().length}
+                </span>
+              )}
+            </div>
+            <div className="px-4 py-3">
+              {!loadingReminders && getGeneralReminders().length === 0 && (
+                <p className="text-sm text-center text-gray-300 py-1 mb-2">אין תזכורות כלליות</p>
+              )}
+              <ul className="space-y-2 mb-3">
+                {getGeneralReminders().map(r => (
+                  <li key={r.id} className="flex items-center gap-2 flex-row-reverse">
+                    <input type="checkbox" checked={false} onChange={() => deleteReminder(r.id)}
+                      className="w-4 h-4 cursor-pointer flex-shrink-0" style={{ accentColor: '#F59E0B' }} />
+                    <span className="flex-1 text-sm text-right text-gray-700">{r.text}</span>
+                    <button onClick={() => deleteReminder(r.id)}
+                      className="text-gray-300 hover:text-red-400 text-lg leading-none flex-shrink-0">×</button>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex gap-2 flex-row-reverse">
+                <input type="text" value={newGeneralReminder}
+                  onChange={e => setNewGeneralReminder(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addGeneralReminder()}
+                  placeholder="הוסף תזכורת כללית..." dir="rtl"
+                  className="flex-1 border-2 border-amber-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-400 min-w-0 bg-amber-50/40" />
+                <button onClick={addGeneralReminder} disabled={!newGeneralReminder.trim()}
+                  className="text-white text-sm font-black px-4 py-2 rounded-xl disabled:opacity-40 transition shadow-sm"
+                  style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
+                  +
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
     </>
   )
