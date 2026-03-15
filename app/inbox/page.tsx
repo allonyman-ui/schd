@@ -1,224 +1,113 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { format } from 'date-fns'
 
-const PERSON_OPTIONS = ['alex', 'itan', 'ami', 'danil', 'assaf']
-const PERSON_LABELS: Record<string, string> = {
-  alex: 'אלכס', itan: 'איתן', ami: 'אמי', danil: 'דניאל', assaf: 'אסף'
-}
+const PERSON_OPTIONS = ['ami', 'alex', 'itan', 'danil', 'assaf']
+const PERSON_LABELS: Record<string, string> = { alex:'אלכס', itan:'איתן', ami:'אמי', danil:'דניאל', assaf:'אסף' }
 const PERSON_COLORS: Record<string, string> = {
-  alex: 'bg-blue-100 text-blue-800',
-  itan: 'bg-green-100 text-green-800',
-  ami: 'bg-purple-100 text-purple-800',
-  danil: 'bg-orange-100 text-orange-800',
-  assaf: 'bg-pink-100 text-pink-800',
+  alex:'bg-purple-100 text-purple-800', itan:'bg-green-100 text-green-800',
+  ami:'bg-pink-100 text-pink-800', danil:'bg-emerald-100 text-emerald-800', assaf:'bg-blue-100 text-blue-800',
 }
 
 interface ExtractedEvent {
-  person: string
-  title: string
-  date: string
-  start_time: string | null
-  end_time: string | null
-  location: string | null
-  notes: string | null
-  is_recurring: boolean
-  recurrence_days: string[] | null
-  meeting_link: string | null
-  action?: string
-  original_title?: string | null
+  person: string; title: string; date: string
+  start_time: string | null; end_time: string | null
+  location: string | null; notes: string | null
+  is_recurring: boolean; recurrence_days: string[] | null
+  meeting_link: string | null; action?: string
 }
 
-interface BatchHistory {
-  id: string
-  raw_text: string
-  processed_events: ExtractedEvent[]
-  created_at: string
-}
+type InputTab = 'text' | 'email' | 'calendar' | 'quick'
+
+const INPUT_TABS = [
+  { key: 'text'     as InputTab, icon: '📋', label: 'הדבק טקסט' },
+  { key: 'email'    as InputTab, icon: '📧', label: 'מייל' },
+  { key: 'calendar' as InputTab, icon: '📅', label: 'Google Calendar' },
+  { key: 'quick'    as InputTab, icon: '⚡', label: 'פקודה מהירה' },
+]
 
 function formatDate(d: string) {
-  if (!d) return ''
-  try {
-    return new Date(d).toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'short' })
-  } catch { return d }
+  try { return new Date(d).toLocaleDateString('he-IL', { weekday:'short', day:'numeric', month:'short' }) }
+  catch { return d }
 }
 
-function EventPreviewCard({
-  ev, index, onUpdate, onRemove, needsFix
-}: {
-  ev: ExtractedEvent
-  index: number
-  onUpdate: (idx: number, field: string, value: string) => void
-  onRemove: (idx: number) => void
-  needsFix: boolean
+function EventPreviewCard({ ev, index, onUpdate, onRemove, needsFix }: {
+  ev: ExtractedEvent; index: number
+  onUpdate: (i: number, f: string, v: string) => void
+  onRemove: (i: number) => void; needsFix: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
-
   return (
-    <div className={`rounded-xl border p-4 ${needsFix ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
-      {/* Header row */}
+    <div className={`rounded-2xl border p-4 transition-all ${needsFix ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
       <div className="flex items-start justify-between gap-2 mb-3">
-        <button
-          onClick={() => onRemove(index)}
-          className="text-gray-400 hover:text-red-500 transition text-lg leading-none flex-shrink-0 mt-0.5"
-          title="הסר אירוע"
-        >×</button>
+        <button onClick={() => onRemove(index)} className="text-gray-400 hover:text-red-500 text-lg leading-none flex-shrink-0">×</button>
         <div className="flex-1 text-right">
-          <div className="font-semibold text-gray-800 text-base">{ev.title}</div>
-          {needsFix && (
-            <div className="text-xs text-orange-600 mt-0.5">⚠️ יש להשלים פרטים חסרים</div>
-          )}
+          <div className="font-bold text-gray-800 text-base leading-snug">{ev.title}</div>
+          {needsFix && <div className="text-xs text-orange-600 mt-0.5">⚠️ יש להשלים פרטים חסרים</div>}
         </div>
       </div>
 
-      {/* Person + Date row */}
+      {/* Core fields */}
       <div className="flex gap-2 flex-row-reverse flex-wrap mb-3">
-        {/* Person */}
         <div className="flex flex-col gap-1 min-w-[100px]">
-          <label className="text-xs text-gray-500 text-right">ילד/ה {!ev.person && <span className="text-red-500">*</span>}</label>
-          <select
-            value={ev.person || ''}
-            onChange={e => onUpdate(index, 'person', e.target.value)}
-            className={`border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 ${!ev.person ? 'border-orange-400 bg-orange-50' : 'border-gray-200 bg-white'}`}
-            dir="rtl"
-          >
+          <label className="text-xs text-gray-500 text-right">ל{!ev.person && <span className="text-red-400">*</span>}</label>
+          <select value={ev.person||''} onChange={e => onUpdate(index,'person',e.target.value)}
+            className={`border rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 ${!ev.person?'border-orange-400 bg-orange-50':'border-gray-200 bg-white'}`} dir="rtl">
             <option value="">בחר...</option>
-            {PERSON_OPTIONS.map(p => (
-              <option key={p} value={p}>{PERSON_LABELS[p]}</option>
-            ))}
+            {PERSON_OPTIONS.map(p => <option key={p} value={p}>{PERSON_LABELS[p]}</option>)}
           </select>
         </div>
-
-        {/* Date */}
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-500 text-right">תאריך {!ev.date && <span className="text-red-500">*</span>}</label>
-          <input
-            type="date"
-            value={ev.date || ''}
-            onChange={e => onUpdate(index, 'date', e.target.value)}
-            className={`border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 ${!ev.date ? 'border-orange-400 bg-orange-50' : 'border-gray-200 bg-white'}`}
-          />
+          <label className="text-xs text-gray-500 text-right">תאריך{!ev.date && <span className="text-red-400">*</span>}</label>
+          <input type="date" value={ev.date||''} onChange={e => onUpdate(index,'date',e.target.value)}
+            className={`border rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 ${!ev.date?'border-orange-400 bg-orange-50':'border-gray-200 bg-white'}`} />
         </div>
-
-        {/* Time */}
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-500 text-right">שעת התחלה</label>
-          <input
-            type="time"
-            value={ev.start_time || ''}
-            onChange={e => onUpdate(index, 'start_time', e.target.value)}
-            className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
-          />
+          <label className="text-xs text-gray-500 text-right">שעה</label>
+          <input type="time" value={ev.start_time||''} onChange={e => onUpdate(index,'start_time',e.target.value)}
+            className="border border-gray-200 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
         </div>
-
-        {/* End time */}
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-500 text-right">שעת סיום</label>
-          <input
-            type="time"
-            value={ev.end_time || ''}
-            onChange={e => onUpdate(index, 'end_time', e.target.value)}
-            className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
-          />
+          <label className="text-xs text-gray-500 text-right">סיום</label>
+          <input type="time" value={ev.end_time||''} onChange={e => onUpdate(index,'end_time',e.target.value)}
+            className="border border-gray-200 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
         </div>
       </div>
 
       {/* Summary chips */}
       <div className="flex flex-wrap gap-1.5 flex-row-reverse mb-2">
-        {ev.person && (
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PERSON_COLORS[ev.person] || 'bg-gray-100 text-gray-700'}`}>
-            {PERSON_LABELS[ev.person] || ev.person}
-          </span>
-        )}
-        {ev.date && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">📅 {formatDate(ev.date)}</span>
-        )}
-        {ev.start_time && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">⏰ {ev.start_time}{ev.end_time ? `–${ev.end_time}` : ''}</span>
-        )}
-        {ev.is_recurring && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">🔄 קבוע</span>
-        )}
-        {ev.action === 'cancel' && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">❌ ביטול</span>
-        )}
+        {ev.person && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PERSON_COLORS[ev.person]||'bg-gray-100 text-gray-700'}`}>{PERSON_LABELS[ev.person]||ev.person}</span>}
+        {ev.date && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">📅 {formatDate(ev.date)}</span>}
+        {ev.start_time && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">⏰ {ev.start_time}{ev.end_time?`–${ev.end_time}`:''}</span>}
+        {ev.is_recurring && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">🔄 קבוע</span>}
       </div>
 
-      {/* Location */}
-      {ev.location && (
-        <div className="flex items-center gap-1.5 justify-end text-sm text-gray-600 mb-1.5">
-          <span>{ev.location}</span>
-          <span>📍</span>
+      {ev.location && <div className="flex items-center gap-1.5 justify-end text-sm text-gray-600 mb-1.5"><span>{ev.location}</span><span>📍</span></div>}
+      {ev.notes && (
+        <div className="bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 text-sm text-gray-700 text-right mt-2">
+          <span className="font-medium text-amber-700">📝 </span>{ev.notes}
         </div>
       )}
-
-      {/* Meeting link */}
       {ev.meeting_link && (
-        <div className="flex items-center gap-1.5 justify-end text-sm mb-1.5">
-          <a href={ev.meeting_link} target="_blank" rel="noreferrer" className="text-blue-600 underline truncate max-w-[200px]">
-            {ev.meeting_link}
-          </a>
+        <div className="flex items-center gap-1.5 justify-end text-sm mt-1.5">
+          <a href={ev.meeting_link} target="_blank" rel="noreferrer" className="text-blue-600 underline text-xs truncate max-w-[200px]">{ev.meeting_link}</a>
           <span>🔗</span>
         </div>
       )}
 
-      {/* Notes */}
-      {ev.notes && (
-        <div className="bg-yellow-50 border border-yellow-100 rounded-lg px-3 py-2 text-sm text-gray-700 text-right mt-2">
-          <span className="font-medium text-yellow-700">📝 הערות: </span>{ev.notes}
-        </div>
-      )}
-
-      {/* Expand to edit title/location/notes */}
-      <button
-        onClick={() => setExpanded(x => !x)}
-        className="text-xs text-gray-400 hover:text-gray-600 mt-2 block mr-auto"
-      >
-        {expanded ? '▲ פחות עריכה' : '▼ ערוך פרטים נוספים'}
+      <button onClick={() => setExpanded(x => !x)} className="text-xs text-gray-400 hover:text-gray-600 mt-2 block mr-auto">
+        {expanded ? '▲ פחות' : '▼ ערוך פרטים'}
       </button>
-
       {expanded && (
         <div className="mt-3 space-y-2">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500 text-right">כותרת</label>
-            <input
-              type="text"
-              value={ev.title || ''}
-              onChange={e => onUpdate(index, 'title', e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-              dir="rtl"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500 text-right">מיקום</label>
-            <input
-              type="text"
-              value={ev.location || ''}
-              onChange={e => onUpdate(index, 'location', e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-              dir="rtl"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500 text-right">הערות / מה להביא</label>
-            <textarea
-              value={ev.notes || ''}
-              onChange={e => onUpdate(index, 'notes', e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none h-20"
-              dir="rtl"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500 text-right">קישור פגישה</label>
-            <input
-              type="url"
-              value={ev.meeting_link || ''}
-              onChange={e => onUpdate(index, 'meeting_link', e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-              dir="ltr"
-              placeholder="https://..."
-            />
-          </div>
+          {[['title','כותרת','text'],['location','מיקום','text'],['notes','הערות / מה להביא','text'],['meeting_link','קישור לפגישה','url']].map(([field, label, type]) => (
+            <div key={field} className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500 text-right">{label}</label>
+              <input type={type} value={(ev as any)[field]||''} onChange={e => onUpdate(index, field, e.target.value)}
+                className="border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" dir={type==='url'?'ltr':'rtl'} />
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -226,232 +115,244 @@ function EventPreviewCard({
 }
 
 export default function InboxPage() {
+  const [inputTab, setInputTab] = useState<InputTab>('text')
   const [rawText, setRawText] = useState('')
+  const [quickCmd, setQuickCmd] = useState('')
   const [processing, setProcessing] = useState(false)
   const [extractedEvents, setExtractedEvents] = useState<ExtractedEvent[]>([])
-  const [history, setHistory] = useState<BatchHistory[]>([])
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => { fetchHistory() }, [])
-
-  async function fetchHistory() {
-    const res = await fetch('/api/process-whatsapp')
-    if (res.ok) setHistory(await res.json())
-  }
-
-  async function handleProcess() {
-    if (!rawText.trim()) return
-    setProcessing(true)
-    setError('')
-    setSuccessMsg('')
-    setExtractedEvents([])
-
+  async function handleProcess(text: string) {
+    if (!text.trim()) return
+    setProcessing(true); setError(''); setSuccessMsg(''); setExtractedEvents([])
     try {
       const res = await fetch('/api/process-whatsapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rawText }),
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ rawText: text }),
       })
-
-      let data
-      try { data = await res.json() } catch { data = null }
-      if (!res.ok) {
-        setError(data?.error || `שגיאת שרת ${res.status}`)
-        return
-      }
-
-      const events: ExtractedEvent[] = (data.events || []).filter(
-        (e: ExtractedEvent) => e.action !== 'cancel'
-      )
-
-      if (events.length === 0) {
-        setSuccessMsg('לא נמצאו אירועים בהודעה')
-        return
-      }
-
+      let data; try { data = await res.json() } catch { data = null }
+      if (!res.ok) { setError(data?.error || `שגיאת שרת ${res.status}`); return }
+      const events: ExtractedEvent[] = (data.events||[]).filter((e: ExtractedEvent) => e.action !== 'cancel')
+      if (events.length === 0) { setSuccessMsg('לא נמצאו אירועים בטקסט'); return }
       setExtractedEvents(events)
-    } catch (err) {
-      setError('שגיאת רשת — ודא שהאפליקציה פרוסה ונסה שוב')
-      console.error(err)
-    } finally {
-      setProcessing(false)
-    }
+    } catch { setError('שגיאת רשת — ודא שהאפליקציה פרוסה ונסה שוב')
+    } finally { setProcessing(false) }
   }
 
   async function handleSaveAll() {
-    const readyEvents = extractedEvents.filter(e => e.person && e.date && e.title)
-    if (readyEvents.length === 0) return
-
-    setSaving(true)
-    setError('')
-    let savedCount = 0
-    const errors: string[] = []
-
-    for (const ev of readyEvents) {
+    const ready = extractedEvents.filter(e => e.person && e.date && e.title)
+    if (ready.length===0) return
+    setSaving(true); setError('')
+    let saved=0; const errs: string[] = []
+    for (const ev of ready) {
       try {
-        const r = await fetch('/api/events', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...ev, source: 'inbox' }),
-        })
+        const r = await fetch('/api/events', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({...ev, source:'inbox'}) })
         if (r.ok) {
-          const d = await r.json().catch(() => ({}))
-          if (d.duplicate) {
-            errors.push(`"${ev.title}": כבר קיים בלו"ז (דילגנו)`)
-          } else {
-            savedCount++
-          }
+          const d = await r.json().catch(()=>({}))
+          d.duplicate ? errs.push(`"${ev.title}": כבר קיים`) : saved++
         } else {
           let msg = `שגיאת שרת ${r.status}`
-          try { const d = await r.json(); msg = d.error || msg } catch { /* ignore */ }
-          errors.push(`"${ev.title}": ${msg}`)
+          try { const d = await r.json(); msg = d.error||msg } catch {}
+          errs.push(`"${ev.title}": ${msg}`)
         }
-      } catch (err) {
-        errors.push(`"${ev.title}": שגיאת רשת`)
-        console.error(err)
-      }
+      } catch { errs.push(`"${ev.title}": שגיאת רשת`) }
     }
-
     setSaving(false)
-
-    if (savedCount > 0) {
-      setSuccessMsg(`✅ נשמרו ${savedCount} אירועים בלו"ז`)
-      setExtractedEvents(prev => prev.filter(e => !e.person || !e.date))
-      setRawText('')
-      fetchHistory()
-    }
-    if (errors.length > 0) {
-      setError('שגיאה בשמירה: ' + errors.join(' | '))
-    }
+    if (saved>0) { setSuccessMsg(`✅ נשמרו ${saved} אירועים בלו"ז!`); setExtractedEvents(prev=>prev.filter(e=>!e.person||!e.date)); setRawText(''); setQuickCmd('') }
+    if (errs.length>0) setError('שגיאות: '+errs.join(' | '))
   }
 
   function updateEvent(idx: number, field: string, value: string) {
-    setExtractedEvents(prev => prev.map((e, i) => i === idx ? { ...e, [field]: value } : e))
+    setExtractedEvents(prev => prev.map((e,i) => i===idx ? {...e,[field]:value} : e))
   }
-
   function removeEvent(idx: number) {
-    setExtractedEvents(prev => prev.filter((_, i) => i !== idx))
+    setExtractedEvents(prev => prev.filter((_,i) => i!==idx))
   }
 
-  const completeEvents = extractedEvents.filter(e => e.person && e.date && e.title)
-  const incompleteEvents = extractedEvents.filter(e => !e.person || !e.date)
-  const hasAnyReady = completeEvents.length > 0
+  const complete = extractedEvents.filter(e => e.person && e.date && e.title)
+  const incomplete = extractedEvents.filter(e => !e.person || !e.date)
+
+  const placeholders: Record<InputTab, string> = {
+    text: `דוגמה:\n"שלום הורים, חזרה לחג ביום רביעי 19.3 שעה 16:00 בבית הספר. יש להביא תלבושת לבנה ולא לשכוח את הספר 'שירים לחג'"`,
+    email: `הדבק כאן את תוכן המייל כפי שקיבלת אותו — כולל שורת הנושא, שם השולח, התאריך, וכל הפרטים. Claude יזהה אוטומטית את כל האירועים.`,
+    calendar: `הדבק כאן תוכן מיצוא Google Calendar (.ics):\n\nBEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:כדורגל — איתן\nDTSTART:20260320T160000\nDTEND:20260320T180000\nLOCATION:מגרש ספורט\nDESCRIPTION:אימון שבועי\nEND:VEVENT\nEND:VCALENDAR\n\nאו פשוט הדבק טקסט שהעתקת מ-Google Calendar.`,
+    quick: ``,
+  }
+
+  const hints: Record<InputTab, { title: string; steps: string[] }> = {
+    email: {
+      title: '📧 איך להעביר מייל',
+      steps: [
+        'פתח את המייל שברצונך להוסיף ללוח',
+        'העתק את כל תוכן המייל (Ctrl+A, Ctrl+C)',
+        'הדבק כאן — Claude יזהה תאריכים, שעות ואת כל הפרטים',
+        'בדוק ותקן אם נדרש, לאחר מכן שמור',
+      ]
+    },
+    calendar: {
+      title: '📅 ייצוא מ-Google Calendar',
+      steps: [
+        'ב-Google Calendar: לחץ ⚙️ → הגדרות → ייצוא',
+        'הורד קובץ .ics, פתח אותו בעורך טקסט',
+        'העתק והדבק את התוכן כאן',
+        'לחלופין: פתח אירוע ב-Calendar, העתק את הטקסט מהחלון',
+      ]
+    },
+    text: { title: '', steps: [] },
+    quick: { title: '', steps: [] },
+  }
 
   return (
-    <div className="max-w-2xl mx-auto px-3 pb-10">
-      <h1 className="text-xl font-bold text-gray-800 mb-5 text-right">📥 הכנסת מידע ללו&quot;ז</h1>
+    <div className="max-w-2xl mx-auto px-3 pb-12" dir="rtl">
+      {/* Header */}
+      <div className="text-center mb-6 pt-2">
+        <h1 className="text-2xl font-black text-gray-900">📥 הכנסת מידע ללוח</h1>
+        <p className="text-sm text-gray-500 mt-1">הדבק כל סוג של טקסט — Claude יחלץ את האירועים</p>
+      </div>
 
-      {/* Success */}
+      {/* Success / Error */}
       {successMsg && (
-        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-xl text-green-800 text-sm text-right">
-          {successMsg}
-        </div>
+        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-2xl text-green-800 text-sm text-right font-bold">{successMsg}</div>
+      )}
+      {error && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm text-right">{error}</div>
       )}
 
-      {/* Input */}
-      <div className="bg-white rounded-2xl shadow-sm p-5 mb-6">
-        <h2 className="text-base font-semibold text-gray-700 mb-1 text-right">הדבק טקסט</h2>
-        <p className="text-xs text-gray-400 mb-3 text-right">
-          הדבק הודעה מוואטסאפ, מייל, סמס, או כל טקסט עם מידע על אירועים. הבינה המלאכותית תחלץ את כל הפרטים.
-        </p>
-        <textarea
-          value={rawText}
-          onChange={e => setRawText(e.target.value)}
-          className="w-full border border-gray-200 rounded-xl p-3 text-sm h-36 resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
-          placeholder={`לדוגמה:\n"שלום הורים, יש חזרה לחג ביום רביעי 19.3 בשעה 16:00 בבית הספר. יש להביא תלבושת לבנה ולא לשכוח את הספר 'שירים לחג'"`}
-          dir="rtl"
-        />
-        {error && <p className="text-red-500 text-sm mt-2 text-right">{error}</p>}
-        <div className="flex justify-start mt-3">
-          <button
-            onClick={handleProcess}
-            disabled={processing || !rawText.trim()}
-            className="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-5 py-2 rounded-xl transition disabled:opacity-50 flex items-center gap-2"
-          >
-            {processing
-              ? <><span className="animate-spin inline-block">⏳</span> מנתח...</>
-              : '🔍 נתח ושלוף אירועים'
-            }
-          </button>
+      {/* Input source tabs */}
+      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 mb-5 overflow-hidden">
+        {/* Tab bar */}
+        <div className="flex border-b border-gray-100">
+          {INPUT_TABS.map(tab => (
+            <button key={tab.key} onClick={() => { setInputTab(tab.key); setError(''); setSuccessMsg('') }}
+              className={`flex-1 py-3 text-xs font-bold transition-all border-b-2 ${inputTab===tab.key ? 'border-amber-400 text-amber-600 bg-amber-50' : 'border-transparent text-gray-500 hover:bg-gray-50'}`}>
+              <div className="text-lg mb-0.5">{tab.icon}</div>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-5">
+          {/* Hint box for email / calendar */}
+          {hints[inputTab]?.steps.length > 0 && (
+            <div className="mb-4 bg-blue-50 border border-blue-100 rounded-2xl p-4">
+              <div className="font-bold text-blue-700 text-sm mb-2">{hints[inputTab].title}</div>
+              <ol className="space-y-1">
+                {hints[inputTab].steps.map((s, i) => (
+                  <li key={i} className="text-xs text-blue-600 flex gap-2">
+                    <span className="font-black flex-shrink-0">{i+1}.</span><span>{s}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {/* Quick command tab */}
+          {inputTab === 'quick' ? (
+            <div>
+              <div className="text-sm font-bold text-gray-700 mb-2">⚡ הוסף אירוע בפקודה מהירה</div>
+              <p className="text-xs text-gray-400 mb-3">כתוב בחופשיות — לדוגמה: "תוסיף לאמי יום ב׳ שעה 14:00 שיעור שחייה בבריכה" או "איתן יש אימון כדורגל כל חמישי 16:00"</p>
+              <div className="flex gap-2">
+                <button onClick={() => handleProcess(quickCmd)} disabled={processing||!quickCmd.trim()}
+                  className="flex-shrink-0 bg-amber-500 hover:bg-amber-600 text-white font-bold px-4 py-3 rounded-2xl transition disabled:opacity-40 flex items-center gap-2 text-sm">
+                  {processing ? <span className="animate-spin">⏳</span> : '🤖'} נתח
+                </button>
+                <input type="text" value={quickCmd} onChange={e => setQuickCmd(e.target.value)}
+                  onKeyDown={e => e.key==='Enter' && handleProcess(quickCmd)}
+                  placeholder='לדוגמה: "איתן — שיעור מתמטיקה יום ג׳ 16:00"'
+                  className="flex-1 border-2 border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-400 bg-gray-50" dir="rtl" />
+              </div>
+              {/* Quick examples */}
+              <div className="mt-3">
+                <div className="text-xs text-gray-400 mb-2">דוגמאות מהירות — לחץ להכניס:</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'אמי — גן שעשועים מחר 10:00',
+                    'איתן כדורגל כל שני 16:00',
+                    'אלכס חוג גיטרה יום ג׳ 15:30',
+                    'אסף פגישה ראשון הבא 09:00 בזום',
+                  ].map(ex => (
+                    <button key={ex} onClick={() => setQuickCmd(ex)}
+                      className="text-xs bg-gray-100 hover:bg-amber-100 hover:text-amber-700 text-gray-600 px-2.5 py-1 rounded-full transition border border-gray-200">
+                      {ex}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Text / Email / Calendar — all go through same textarea */
+            <div>
+              <textarea value={rawText} onChange={e => setRawText(e.target.value)}
+                className="w-full border-2 border-gray-200 rounded-2xl p-4 text-sm h-40 resize-none focus:outline-none focus:border-amber-400 bg-gray-50"
+                placeholder={placeholders[inputTab]} dir="rtl" />
+              <div className="flex gap-2 mt-3">
+                <button onClick={() => handleProcess(rawText)} disabled={processing||!rawText.trim()}
+                  className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-5 py-2.5 rounded-2xl transition disabled:opacity-40 flex items-center gap-2 text-sm">
+                  {processing ? <><span className="animate-spin">⏳</span> מנתח...</> : '🤖 חלץ אירועים עם AI'}
+                </button>
+                {rawText && (
+                  <button onClick={() => { setRawText(''); setExtractedEvents([]); setError(''); setSuccessMsg('') }}
+                    className="text-gray-400 hover:text-gray-600 text-sm px-3 py-2 rounded-2xl border-2 border-gray-200 hover:border-gray-300 transition">
+                    נקה
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Extracted events */}
       {extractedEvents.length > 0 && (
         <div className="mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex gap-2">
-              {hasAnyReady && (
-                <button
-                  onClick={handleSaveAll}
-                  disabled={saving}
-                  className="bg-green-500 hover:bg-green-600 text-white font-semibold px-5 py-2 rounded-xl transition disabled:opacity-50 flex items-center gap-2 text-sm"
-                >
-                  {saving
-                    ? <><span className="animate-spin inline-block">⏳</span> שומר...</>
-                    : `💾 שמור ${completeEvents.length} אירועים ללו"ז`
-                  }
-                </button>
-              )}
-            </div>
+          {/* Save bar */}
+          <div className="flex items-center justify-between mb-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-3">
+            <button onClick={handleSaveAll} disabled={saving||complete.length===0}
+              className="bg-green-500 hover:bg-green-600 text-white font-bold px-5 py-2 rounded-xl transition disabled:opacity-40 flex items-center gap-2 text-sm">
+              {saving ? <><span className="animate-spin">⏳</span> שומר...</> : `💾 שמור ${complete.length} אירועים`}
+            </button>
             <div className="text-right">
-              <h2 className="text-base font-semibold text-gray-700">
-                נמצאו {extractedEvents.length} אירועים
-              </h2>
-              {incompleteEvents.length > 0 && (
-                <p className="text-xs text-orange-600">{incompleteEvents.length} זקוקים להשלמה</p>
-              )}
+              <div className="text-sm font-bold text-gray-700">נמצאו {extractedEvents.length} אירועים</div>
+              {incomplete.length > 0 && <div className="text-xs text-orange-500">{incomplete.length} זקוקים להשלמה</div>}
             </div>
           </div>
 
           <div className="space-y-3">
             {extractedEvents.map((ev, i) => (
-              <EventPreviewCard
-                key={i}
-                ev={ev}
-                index={i}
-                onUpdate={updateEvent}
-                onRemove={removeEvent}
-                needsFix={!ev.person || !ev.date}
-              />
+              <EventPreviewCard key={i} ev={ev} index={i} onUpdate={updateEvent} onRemove={removeEvent} needsFix={!ev.person||!ev.date} />
             ))}
           </div>
 
-          {hasAnyReady && (
-            <div className="mt-4 flex justify-start">
-              <button
-                onClick={handleSaveAll}
-                disabled={saving}
-                className="bg-green-500 hover:bg-green-600 text-white font-semibold px-5 py-2 rounded-xl transition disabled:opacity-50 flex items-center gap-2"
-              >
-                {saving
-                  ? <><span className="animate-spin inline-block">⏳</span> שומר...</>
-                  : `💾 שמור ${completeEvents.length} אירועים ללו"ז`
-                }
-              </button>
-            </div>
+          {complete.length > 0 && (
+            <button onClick={handleSaveAll} disabled={saving}
+              className="mt-4 w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-2xl transition disabled:opacity-40 flex items-center justify-center gap-2">
+              {saving ? <><span className="animate-spin">⏳</span> שומר...</> : `💾 שמור ${complete.length} אירועים ללו"ז`}
+            </button>
           )}
         </div>
       )}
 
-      {/* History */}
-      {history.length > 0 && (
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h2 className="text-base font-semibold text-gray-700 mb-4 text-right">היסטוריה אחרונה</h2>
-          <div className="space-y-3">
-            {history.map(batch => (
-              <div key={batch.id} className="border border-gray-100 rounded-xl p-3">
-                <div className="flex items-center justify-between mb-1 flex-row-reverse">
-                  <span className="text-xs text-gray-400">
-                    {new Date(batch.created_at).toLocaleString('he-IL')}
-                  </span>
-                  <span className="text-xs font-medium text-gray-500">
-                    {batch.processed_events?.length || 0} אירועים
-                  </span>
+      {/* Tips */}
+      {extractedEvents.length === 0 && !processing && (
+        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
+          <div className="font-black text-gray-700 text-sm mb-3 text-right">💡 מה אפשר להכניס?</div>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { icon: '💬', title: 'הודעות WhatsApp', desc: 'העתק/הדבק ישירות מהשיחה' },
+              { icon: '📧', title: 'מיילים מבית הספר', desc: 'הדבק את תוכן המייל המלא' },
+              { icon: '📅', title: 'Google Calendar', desc: 'יצא .ics או העתק טקסט' },
+              { icon: '📄', title: 'עלון בית ספר', desc: 'צלם, העבר OCR, הדבק' },
+              { icon: '🗓️', title: 'לוח חוגים', desc: 'כל פורמט טקסט עובד' },
+              { icon: '⚡', title: 'פקודה מהירה', desc: 'הוסף ידנית בשפה חופשית' },
+            ].map(tip => (
+              <div key={tip.title} className="flex items-start gap-2.5 p-3 rounded-2xl bg-gray-50 border border-gray-100">
+                <span className="text-xl flex-shrink-0">{tip.icon}</span>
+                <div>
+                  <div className="text-xs font-bold text-gray-700">{tip.title}</div>
+                  <div className="text-xs text-gray-400">{tip.desc}</div>
                 </div>
-                <p className="text-sm text-gray-600 line-clamp-2 text-right">{batch.raw_text}</p>
               </div>
             ))}
           </div>
