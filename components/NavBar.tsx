@@ -31,6 +31,14 @@ export default function NavBar() {
             >
               📥 הכנס מידע
             </Link>
+            <Link
+              href="/settings"
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition whitespace-nowrap ${
+                pathname === '/settings' ? 'bg-blue-100 text-blue-800' : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              ⚙️ הגדרות
+            </Link>
           </div>
 
           {/* Logout */}
