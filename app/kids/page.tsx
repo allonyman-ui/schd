@@ -117,11 +117,21 @@ const ALL_PEOPLE = [
   { key: 'danil', name: 'דניאל' },
 ]
 
-type TabKey = 'kids' | 'assaf' | 'danil'
+// ── Family overview config (all 5 people) ─────────────────────────────────
+const FAMILY_PEOPLE = [
+  { key: 'ami',   name: 'אמי',    color: '#E91E63', photo: 'https://i.imgur.com/cG8XKwn.jpeg' as string|null, emoji: '🌸' },
+  { key: 'alex',  name: 'אלכס',   color: '#8E24AA', photo: 'https://i.imgur.com/G0j3TD8.jpeg' as string|null, emoji: '🎵' },
+  { key: 'itan',  name: 'איתן',   color: '#2E7D32', photo: 'https://i.imgur.com/5BKBLqt.jpeg' as string|null, emoji: '⚽' },
+  { key: 'assaf', name: 'אסף',    color: '#1D4ED8', photo: null, emoji: '💼' },
+  { key: 'danil', name: 'דניאל',  color: '#15803D', photo: null, emoji: '🌿' },
+]
+
+type TabKey = 'family' | 'kids' | 'assaf' | 'danil'
 const TABS = [
-  { key: 'kids'  as TabKey, label: '👨‍👩‍👧 ילדים' },
-  { key: 'assaf' as TabKey, label: '💼 אסף' },
-  { key: 'danil' as TabKey, label: '🌿 דניאל' },
+  { key: 'family' as TabKey, label: '🏠 משפחה' },
+  { key: 'kids'   as TabKey, label: '👧👦 ילדים' },
+  { key: 'assaf'  as TabKey, label: '💼 אסף' },
+  { key: 'danil'  as TabKey, label: '🌿 דניאל' },
 ]
 
 // ── Live clock ─────────────────────────────────────────────────────────────
@@ -720,6 +730,109 @@ export default function KidsSchedulePage() {
             </button>
           ))}
         </div>
+
+        {/* ── FAMILY TAB ───────────────────────────────────────────────── */}
+        {activeTab === 'family' && (
+          <div className="max-w-4xl mx-auto">
+            {/* Header banner */}
+            <div className="rounded-3xl mb-4 px-6 py-5 text-center shadow-md"
+              style={{ background: 'linear-gradient(135deg,#1e3a5f,#2d6a9f,#1e3a5f)' }}>
+              <div className="text-3xl font-black text-white mb-1">🏠 משפחת אלוני</div>
+              <div className="text-blue-200 text-sm">{dateLabel}</div>
+              <div className="flex justify-center gap-4 mt-3 text-blue-100 text-xs">
+                <span>👥 {FAMILY_PEOPLE.filter(p => getPersonEvents(p.key).length > 0).length} עם אירועים</span>
+                <span>📋 {FAMILY_PEOPLE.reduce((s,p) => s + getPersonEvents(p.key).length, 0)} אירועים סה&quot;כ</span>
+              </div>
+            </div>
+
+            {/* Person strips */}
+            <div className="bg-white rounded-3xl shadow-lg overflow-hidden border border-gray-100">
+              {FAMILY_PEOPLE.map((person, idx) => {
+                const evs = getPersonEvents(person.key)
+                const hasEvents = evs.length > 0
+                return (
+                  <div key={person.key}
+                    className={`flex items-stretch flex-row-reverse min-h-[80px] ${idx > 0 ? 'border-t border-gray-100' : ''}`}>
+
+                    {/* Person panel — right side */}
+                    <div className="flex-shrink-0 w-32 sm:w-40 flex flex-col items-center justify-center py-3 px-2 gap-2"
+                      style={{ background: `${person.color}12`, borderRight: `5px solid ${person.color}` }}>
+                      {person.photo ? (
+                        <img src={person.photo} alt={person.name}
+                          className="w-14 h-14 rounded-full object-cover border-3 shadow-sm"
+                          style={{ border: `3px solid ${person.color}` }} />
+                      ) : (
+                        <div className="w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-sm"
+                          style={{ background: `${person.color}22`, border: `3px solid ${person.color}` }}>
+                          {person.emoji}
+                        </div>
+                      )}
+                      <div className="text-center">
+                        <div className="font-black text-sm" style={{ color: person.color }}>{person.name}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          {hasEvents ? `${evs.length} אירועים` : 'חופשי'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Events area — left side */}
+                    <div className={`flex-1 px-4 py-3 flex flex-wrap gap-2 items-center content-center ${hasEvents ? '' : 'opacity-50'}`}>
+                      {!hasEvents ? (
+                        <div className="flex items-center gap-2 text-gray-400">
+                          <span className="text-xl">🎉</span>
+                          <span className="text-sm font-medium">אין אירועים היום</span>
+                        </div>
+                      ) : evs.map(ev => (
+                        <div key={ev.id}
+                          className="rounded-2xl overflow-hidden shadow-sm flex-shrink-0 max-w-[200px] group/ev relative"
+                          style={{ border: `1.5px solid ${person.color}44` }}>
+                          {/* Time strip at top */}
+                          {ev.start_time && (
+                            <div className="px-2.5 py-0.5 text-xs font-black text-white text-center" dir="ltr"
+                              style={{ background: person.color }}>
+                              {ev.start_time.slice(0,5)}{ev.end_time ? ` – ${ev.end_time.slice(0,5)}` : ''}
+                            </div>
+                          )}
+                          <div className="px-2.5 py-2 bg-white">
+                            <div className="font-bold text-sm text-gray-800 text-right leading-snug">{ev.title}</div>
+                            {ev.location && (
+                              <div className="text-xs text-gray-500 text-right mt-0.5 flex items-center gap-1 flex-row-reverse">
+                                <span>📍</span><span className="truncate">{ev.location}</span>
+                              </div>
+                            )}
+                            {ev.notes && (
+                              <div className="text-xs text-amber-700 rounded-lg px-1.5 py-0.5 mt-1 text-right leading-snug"
+                                style={{ background: '#FEF3C7' }}>
+                                📝 {ev.notes}
+                              </div>
+                            )}
+                            {ev.is_recurring && (
+                              <div className="text-xs mt-0.5" style={{ color: person.color }}>🔄 קבוע</div>
+                            )}
+                          </div>
+                          {/* hover actions */}
+                          <div className="absolute top-1 left-1 hidden group-hover/ev:flex gap-0.5">
+                            <button onClick={() => openEditEvent(ev)}
+                              className="w-5 h-5 rounded-full bg-white shadow text-xs flex items-center justify-center hover:bg-blue-50">✏️</button>
+                            <button onClick={() => deleteEvent(ev.id)}
+                              className="w-5 h-5 rounded-full bg-white shadow text-xs flex items-center justify-center hover:bg-red-50">🗑️</button>
+                          </div>
+                        </div>
+                      ))}
+                      {/* Add event quick button */}
+                      <button onClick={() => openAddEvent(person.key)}
+                        className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-black transition-all opacity-30 hover:opacity-100 border-2 border-dashed"
+                        style={{ borderColor: person.color, color: person.color }}
+                        title={`הוסף אירוע ל${person.name}`}>
+                        +
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ── KIDS TAB ─────────────────────────────────────────────────── */}
         {activeTab === 'kids' && (
