@@ -8,9 +8,12 @@ export async function GET(request: NextRequest) {
   const date = searchParams.get('date')
   const person = searchParams.get('person')
   const general = searchParams.get('general') // ?general=true → all standing reminders (no person/date)
+  const grocery = searchParams.get('grocery')  // ?grocery=true → grocery list items
   const supabase = createServiceClient()
   let query = supabase.from('reminders').select('*').order('created_at')
-  if (general === 'true') {
+  if (grocery === 'true') {
+    query = query.eq('person', '__grocery__')
+  } else if (general === 'true') {
     // Return ALL standing reminders regardless of date
     query = query.is('person', null)
   } else {

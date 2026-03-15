@@ -12,8 +12,7 @@ export default function NavBar() {
   const pathname = usePathname()
   if (pathname === '/login') return null
 
-  const isInbox    = pathname === '/inbox'
-  const isSettings = pathname === '/settings'
+  const isInbox = pathname === '/inbox'
 
   return (
     <nav className="bg-white/95 backdrop-blur-sm shadow-sm border-b border-amber-100 no-print print-hide sticky top-0 z-50">
@@ -56,21 +55,6 @@ export default function NavBar() {
               <span>הכנס מידע</span>
             </Link>
 
-            {/* Settings — smaller, understated */}
-            <Link
-              href="/settings"
-              className={`
-                flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium
-                transition-all whitespace-nowrap border
-                ${isSettings
-                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                  : 'text-gray-500 border-gray-200 hover:bg-gray-50 hover:text-gray-700'
-                }
-              `}
-            >
-              <span className="text-base leading-none">⚙️</span>
-              <span className="hidden sm:inline">הגדרות</span>
-            </Link>
 
           </div>
 

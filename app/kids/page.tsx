@@ -328,13 +328,117 @@ function EventModal({ form, editing, onClose, onSave, onChange }: {
   )
 }
 
+// ── Grocery List Panel ──────────────────────────────────────────────────────
+function GroceryPanel({ items, newVal, loading, onNewChange, onAdd, onToggle, onDelete, onClearDone }: {
+  items: Reminder[]; newVal: string; loading: boolean
+  onNewChange: (v: string) => void
+  onAdd: () => void
+  onToggle: (id: string, done: boolean) => void
+  onDelete: (id: string) => void
+  onClearDone: () => void
+}) {
+  const done    = items.filter(i => i.completed)
+  const pending = items.filter(i => !i.completed)
+
+  return (
+    <div className="mt-6 no-print">
+      <div className="bg-white rounded-2xl shadow-md overflow-hidden border border-emerald-100">
+        {/* Header */}
+        <div className="px-4 py-3 flex items-center gap-2 flex-row-reverse"
+          style={{ background: 'linear-gradient(135deg,#059669,#10B981)' }}>
+          <span className="text-lg">🛒</span>
+          <span className="font-black text-white text-sm flex-1 text-right">רשימת קניות</span>
+          <div className="flex items-center gap-2">
+            {pending.length > 0 && (
+              <span className="bg-white/30 text-white text-xs rounded-full w-6 h-6 flex items-center justify-center font-black">{pending.length}</span>
+            )}
+            {done.length > 0 && (
+              <button onClick={onClearDone}
+                className="text-white/80 hover:text-white text-xs font-bold bg-white/20 hover:bg-white/30 px-2 py-0.5 rounded-full transition whitespace-nowrap">
+                נקה שנרכש ({done.length})
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="px-4 py-3">
+          {!loading && items.length === 0 && (
+            <p className="text-sm text-center text-gray-300 py-2 mb-2">הרשימה ריקה — הוסף פריטים 🥦</p>
+          )}
+
+          {/* Pending items */}
+          {pending.length > 0 && (
+            <ul className="space-y-1.5 mb-2">
+              {pending.map(item => (
+                <li key={item.id} className="flex items-center gap-2 flex-row-reverse group">
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    onChange={() => onToggle(item.id, true)}
+                    className="w-4 h-4 cursor-pointer flex-shrink-0 rounded"
+                    style={{ accentColor: '#059669' }}
+                  />
+                  <span className="flex-1 text-sm text-right text-gray-800">{item.text}</span>
+                  <button onClick={() => onDelete(item.id)}
+                    className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-lg leading-none flex-shrink-0 transition-opacity">×</button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Done items — faded strikethrough */}
+          {done.length > 0 && (
+            <>
+              {pending.length > 0 && <div className="border-t border-dashed border-gray-200 my-2" />}
+              <ul className="space-y-1.5 mb-2">
+                {done.map(item => (
+                  <li key={item.id} className="flex items-center gap-2 flex-row-reverse group">
+                    <input
+                      type="checkbox"
+                      checked={true}
+                      onChange={() => onToggle(item.id, false)}
+                      className="w-4 h-4 cursor-pointer flex-shrink-0 rounded"
+                      style={{ accentColor: '#059669' }}
+                    />
+                    <span className="flex-1 text-sm text-right line-through text-gray-400">{item.text}</span>
+                    <button onClick={() => onDelete(item.id)}
+                      className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-lg leading-none flex-shrink-0 transition-opacity">×</button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {/* Add input */}
+          <div className="flex gap-2 flex-row-reverse mt-2">
+            <input
+              type="text"
+              value={newVal}
+              onChange={e => onNewChange(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && onAdd()}
+              placeholder="הוסף פריט לקניות..."
+              dir="rtl"
+              className="flex-1 border-2 border-emerald-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-400 min-w-0 bg-emerald-50/30"
+            />
+            <button onClick={onAdd} disabled={!newVal.trim()}
+              className="text-white text-sm font-black px-4 py-2 rounded-xl disabled:opacity-40 transition shadow-sm"
+              style={{ background: 'linear-gradient(135deg,#059669,#10B981)' }}>
+              +
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Standalone Reminders Panel ──────────────────────────────────────────────
 function RemindersPanel({ reminders, newVal, loading, onNewChange, onAdd, onDelete }: {
   reminders: Reminder[]; newVal: string; loading: boolean
   onNewChange: (v: string) => void; onAdd: () => void; onDelete: (id: string) => void
 }) {
   return (
-    <div className="mt-6 max-w-2xl mx-auto no-print">
+    <div className="mt-6 no-print">
       <div className="bg-white rounded-2xl shadow-md overflow-hidden border border-amber-100">
         <div className="px-4 py-3 flex items-center gap-2 flex-row-reverse"
           style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
@@ -384,6 +488,11 @@ export default function KidsSchedulePage() {
   const [newReminder, setNewReminder] = useState('')
   const [loadingReminders, setLoadingReminders] = useState(true)
 
+  // Grocery list
+  const [groceries, setGroceries] = useState<Reminder[]>([])
+  const [newGrocery, setNewGrocery] = useState('')
+  const [loadingGroceries, setLoadingGroceries] = useState(true)
+
   const [loadingEvents, setLoadingEvents] = useState(true)
   const [kidThemeIdx, setKidThemeIdx] = useState<Record<string,number>>({ami:0,alex:0,itan:0})
 
@@ -432,6 +541,15 @@ export default function KidsSchedulePage() {
     } finally { setLoadingReminders(false) }
   }, [])
 
+  // Load grocery list
+  const loadGroceries = useCallback(async () => {
+    setLoadingGroceries(true)
+    try {
+      const res = await fetch('/api/reminders?grocery=true')
+      if (res.ok) setGroceries(await res.json())
+    } finally { setLoadingGroceries(false) }
+  }, [])
+
   const loadWeekEvents = useCallback(async () => {
     const weekDates = getWeekDates(selectedDate)
     const startStr = format(weekDates[0], 'yyyy-MM-dd')
@@ -460,6 +578,7 @@ export default function KidsSchedulePage() {
 
   useEffect(() => { loadEvents() }, [loadEvents])
   useEffect(() => { loadReminders() }, [loadReminders])
+  useEffect(() => { loadGroceries() }, [loadGroceries])
 
   useEffect(() => {
     if (activeTab === 'stats') loadDashboard()
@@ -527,6 +646,27 @@ export default function KidsSchedulePage() {
   async function deleteReminder(id: string) {
     setReminders(prev => prev.filter(r => r.id!==id))
     await fetch(`/api/reminders?id=${id}`, { method:'DELETE' })
+  }
+
+  // Grocery CRUD
+  async function addGrocery() {
+    const text = newGrocery.trim(); if (!text) return
+    const res = await fetch('/api/reminders', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ date: format(new Date(),'yyyy-MM-dd'), person: '__grocery__', text, completed: false }) })
+    if (res.ok) { const data = await res.json(); setGroceries(prev => [...prev, data]); setNewGrocery('') }
+  }
+  async function toggleGrocery(id: string, done: boolean) {
+    setGroceries(prev => prev.map(g => g.id===id ? {...g, completed: done} : g))
+    await fetch(`/api/reminders?id=${id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ completed: done }) })
+  }
+  async function deleteGrocery(id: string) {
+    setGroceries(prev => prev.filter(g => g.id!==id))
+    await fetch(`/api/reminders?id=${id}`, { method:'DELETE' })
+  }
+  async function clearDoneGroceries() {
+    const done = groceries.filter(g => g.completed)
+    setGroceries(prev => prev.filter(g => !g.completed))
+    await Promise.all(done.map(g => fetch(`/api/reminders?id=${g.id}`, { method:'DELETE' })))
   }
 
   // Helpers
@@ -1132,10 +1272,16 @@ export default function KidsSchedulePage() {
           </div>
         )}
 
-        {/* ── STANDALONE REMINDERS — always at bottom ─────────────────── */}
-        <RemindersPanel
-          reminders={reminders} newVal={newReminder} loading={loadingReminders}
-          onNewChange={setNewReminder} onAdd={addReminder} onDelete={deleteReminder} />
+        {/* ── REMINDERS + GROCERY — always at bottom ───────────────────── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 sm:gap-4 max-w-4xl mx-auto">
+          <RemindersPanel
+            reminders={reminders} newVal={newReminder} loading={loadingReminders}
+            onNewChange={setNewReminder} onAdd={addReminder} onDelete={deleteReminder} />
+          <GroceryPanel
+            items={groceries} newVal={newGrocery} loading={loadingGroceries}
+            onNewChange={setNewGrocery} onAdd={addGrocery}
+            onToggle={toggleGrocery} onDelete={deleteGrocery} onClearDone={clearDoneGroceries} />
+        </div>
 
       </div>
     </>
