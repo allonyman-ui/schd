@@ -140,7 +140,7 @@ export default function ChatWidget() {
       {/* ── Floating button ── */}
       <button
         onClick={() => { setOpen(o => !o); if (!open) loadContext() }}
-        className="fixed bottom-6 left-6 z-[9998] w-14 h-14 rounded-full shadow-2xl flex items-center justify-center text-2xl transition-all hover:scale-110 active:scale-95 no-print"
+        className="fixed bottom-6 right-6 z-[9998] w-14 h-14 rounded-full shadow-2xl flex items-center justify-center text-2xl transition-all hover:scale-110 active:scale-95 no-print"
         style={{ background: open ? 'linear-gradient(135deg,#4F46E5,#7C3AED)' : 'linear-gradient(135deg,#3B82F6,#6366F1)' }}
         aria-label="פתח צ'אט עם Claude"
         title="שוחח עם Claude"
@@ -151,7 +151,7 @@ export default function ChatWidget() {
       {/* ── Chat panel ── */}
       {open && (
         <div
-          className="fixed bottom-24 left-6 z-[9997] w-[340px] sm:w-[380px] flex flex-col rounded-3xl shadow-2xl overflow-hidden no-print chat-slide-up"
+          className="fixed bottom-24 right-6 z-[9997] w-[340px] sm:w-[380px] flex flex-col rounded-3xl shadow-2xl overflow-hidden no-print chat-slide-up"
           style={{ maxHeight: '70vh', border: '1.5px solid #E0E7FF', background: '#fff' }}
           dir="rtl"
         >
