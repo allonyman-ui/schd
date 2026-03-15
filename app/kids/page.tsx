@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { format, addDays, subDays } from 'date-fns'
 import { he } from 'date-fns/locale'
+import WeatherWidget from '@/components/WeatherWidget'
 
 interface Event {
   id: string; title: string; person: string; date: string
@@ -689,14 +690,19 @@ export default function KidsSchedulePage() {
           </div>
         </div>
 
-        {/* Date + clock */}
-        <div className="text-center mb-4 no-print">
-          <div className="inline-block bg-white rounded-3xl shadow-md px-8 py-4 border border-gray-100">
+        {/* Date + clock + weather */}
+        <div className="mb-4 no-print flex flex-col sm:flex-row items-center sm:items-start gap-3">
+          {/* Date / clock card */}
+          <div className="text-center bg-white rounded-3xl shadow-md px-8 py-4 border border-gray-100 flex-shrink-0">
             <h1 className="text-2xl sm:text-3xl font-black text-gray-900">📅 לו&quot;ז משפחת אלוני — {format(selectedDate, 'd בMMMM', { locale: he })}</h1>
             <p className="text-sm text-gray-500 mt-1">{dateLabel}</p>
             <div className="mt-2 flex items-center justify-center gap-2">
               <span className="text-xs text-gray-400">שעה עכשיו:</span><LiveClock />
             </div>
+          </div>
+          {/* Weather */}
+          <div className="flex-1 w-full sm:w-auto">
+            <WeatherWidget />
           </div>
         </div>
 
