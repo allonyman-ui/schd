@@ -199,13 +199,10 @@ async function fetchUpcomingSchedule(): Promise<string> {
   } catch { return '' }
 }
 
-// ── Pending clarification state (stored in whatsapp_batches) ──────────────
-interface PendingState {
-  type: 'pending_clarification'
-  missing_field: string
-  partial_events: Array<Record<string, unknown>>
-  expires: string
-}
+// ── Pending state (stored in whatsapp_batches) ────────────────────────────
+type PendingState =
+  | { type: 'pending_clarification'; missing_field: string; partial_events: Array<Record<string, unknown>>; expires: string }
+  | { type: 'pending_duplicate'; dup_pairs: DupPair[]; clean_events: Array<Record<string, unknown>>; expires: string }
 
 async function getPending(from: string) {
   const supabase = createServiceClient()
@@ -219,7 +216,7 @@ async function getPending(from: string) {
     .limit(1)
   if (!data?.length) return null
   const state = data[0].processed_events as unknown as PendingState
-  if (state?.type !== 'pending_clarification') return null
+  if (!state?.type?.startsWith('pending_')) return null
   return { id: data[0].id as string, state }
 }
 
@@ -284,27 +281,35 @@ function clarificationCard(partialEvents: Array<Record<string, unknown>>, missin
   return lines.join('\n')
 }
 
-// ── Smart event upsert ────────────────────────────────────────────────────
-async function upsertEvent(
-  ev: Record<string, unknown>
-): Promise<{ status: 'saved' | 'updated' | 'skipped'; id: string | null }> {
-  if (!ev.title || !ev.date) return { status: 'skipped', id: null }
-  const supabase = createServiceClient()
-  const person = (ev.person as string) || 'assaf'
-  const date   = ev.date as string
-  const d = new Date(date)
-  // Look ±1 day for potential duplicate (tight window reduces false positives)
-  const dM1 = new Date(d); dM1.setDate(d.getDate() - 1)
-  const dP1 = new Date(d); dP1.setDate(d.getDate() + 1)
+// Build duplicate-resolution question
+interface DupPair {
+  new_ev: Record<string, unknown>
+  existing: { id: string; title: string; date: string; start_time?: string | null }
+}
+function duplicateCard(pairs: DupPair[]): string {
+  const lines: string[] = ['⚠️ *מצאתי אירועים דומים בלוח!*', '']
+  pairs.forEach((p, i) => {
+    const num = pairs.length > 1 ? `${i + 1}. ` : ''
+    lines.push(`${num}📌 *קיים:* ${p.existing.title}`)
+    lines.push(`   📅 ${heDate(p.existing.date)}${p.existing.start_time ? ` ⏰ ${p.existing.start_time}` : ''}`)
+    lines.push(`   ➡️ *חדש:* ${String(p.new_ev.title || '')}`)
+    lines.push(`   📅 ${heDate(p.new_ev.date as string)}${p.new_ev.start_time ? ` ⏰ ${p.new_ev.start_time}` : ''}`)
+    if (i < pairs.length - 1) lines.push('')
+  })
+  lines.push('')
+  if (pairs.length === 1) {
+    lines.push('*עדכן* — עדכן את הקיים עם הפרטים החדשים')
+    lines.push('*חדש* — הוסף כאירוע נפרד')
+  } else {
+    lines.push(`ענה/י עם מספר + פעולה, לדוגמה: "1 עדכן, 2 חדש"`)
+    lines.push('או: *עדכן הכל* / *חדש הכל*')
+  }
+  return lines.join('\n')
+}
 
-  const { data: nearby } = await supabase
-    .from('events').select('id, title, date')
-    .eq('person', person)
-    .gte('date', dM1.toISOString().split('T')[0])
-    .lte('date', dP1.toISOString().split('T')[0])
-
-  const similar = nearby?.find(e => titlesAreSimilar(e.title, ev.title as string))
-  const payload = {
+// ── Event payload builder ─────────────────────────────────────────────────
+function buildPayload(ev: Record<string, unknown>) {
+  return {
     title: ev.title, date: ev.date,
     start_time: ev.start_time ?? null, end_time: ev.end_time ?? null,
     location: ev.location ?? null, notes: ev.notes ?? null,
@@ -312,15 +317,49 @@ async function upsertEvent(
     recurrence_days: ev.recurrence_days ?? null,
     meeting_link: ev.meeting_link ?? null,
   }
+}
 
-  if (similar) {
-    const { error } = await supabase.from('events').update(payload).eq('id', similar.id)
-    return error ? { status: 'skipped', id: null } : { status: 'updated', id: similar.id }
-  } else {
-    const { data, error } = await supabase.from('events')
-      .insert({ ...payload, person, completed: false }).select('id').single()
-    return error ? { status: 'skipped', id: null } : { status: 'saved', id: data?.id ?? null }
-  }
+// Check only — returns similar existing event if found, null otherwise
+async function findDuplicate(
+  ev: Record<string, unknown>
+): Promise<{ id: string; title: string; date: string; start_time?: string | null } | null> {
+  if (!ev.title || !ev.date) return null
+  const supabase = createServiceClient()
+  const person = (ev.person as string) || 'assaf'
+  // Exact same date only — ±1 day was causing too many false positives
+  const { data } = await supabase
+    .from('events').select('id, title, date, start_time')
+    .eq('person', person)
+    .eq('date', ev.date as string)
+  return data?.find(e => titlesAreSimilar(e.title, ev.title as string)) ?? null
+}
+
+// Force-insert (skips duplicate check — used after user says "חדש")
+async function insertEvent(
+  ev: Record<string, unknown>
+): Promise<{ status: 'saved' | 'skipped'; id: string | null }> {
+  if (!ev.title || !ev.date) return { status: 'skipped', id: null }
+  const supabase = createServiceClient()
+  const person = (ev.person as string) || 'assaf'
+  const { data, error } = await supabase.from('events')
+    .insert({ ...buildPayload(ev), person, completed: false }).select('id').single()
+  return error ? { status: 'skipped', id: null } : { status: 'saved', id: data?.id ?? null }
+}
+
+// Force-update existing event (used after user says "עדכן")
+async function updateEvent(
+  id: string, ev: Record<string, unknown>
+): Promise<{ status: 'updated' | 'skipped'; id: string | null }> {
+  const supabase = createServiceClient()
+  const { error } = await supabase.from('events').update(buildPayload(ev)).eq('id', id)
+  return error ? { status: 'skipped', id: null } : { status: 'updated', id }
+}
+
+// Smart upsert used when NO duplicate found (normal flow, no user prompt needed)
+async function saveEvent(
+  ev: Record<string, unknown>
+): Promise<{ status: 'saved' | 'skipped'; id: string | null }> {
+  return insertEvent(ev)
 }
 
 // ── POST: inbound WhatsApp message ────────────────────────────────────────
@@ -377,46 +416,79 @@ export async function POST(request: NextRequest) {
   const supabase = createServiceClient()
   const today    = new Date().toISOString().split('T')[0]
 
-  // ── Check for pending clarification from this sender ─────────────────────
+  // ── Check for pending state from this sender ─────────────────────────────
   const pending = await getPending(from)
   if (pending) {
-    console.log('[whatsapp-inbound] Resolving pending clarification', pending.id)
+    console.log('[whatsapp-inbound] Resolving pending:', pending.state.type)
     await deletePending(pending.id)
-
-    const answer = messageBody.trim()
-    // Map answer to a person key
-    const PERSON_MAP: Record<string, string> = {
-      אמי: 'ami', ami: 'ami', עמי: 'ami',
-      אלכס: 'alex', alex: 'alex', אלכסנדר: 'alex',
-      איתן: 'itan', itan: 'itan',
-      דניאל: 'danil', דני: 'danil', danil: 'danil',
-      אסף: 'assaf', assaf: 'assaf',
-    }
-    const resolvedPerson = PERSON_MAP[answer.toLowerCase().trim()] || PERSON_MAP[answer] || 'assaf'
-
-    const events = (pending.state.partial_events || []).map(ev => ({
-      ...ev, person: resolvedPerson
-    })) as Array<Record<string, unknown>>
-
-    let saved = 0, updated = 0
+    const answer = messageBody.trim().toLowerCase()
     const cards: string[] = []
-    for (const ev of events) {
-      const { status, id } = await upsertEvent(ev)
-      if (id) ev._event_id = id
-      if (status === 'saved') { saved++; cards.push(eventCard(ev, '✅ נוסף')) }
-      else if (status === 'updated') { updated++; cards.push(eventCard(ev, '🔄 עודכן')) }
+    let saved = 0, updated = 0
+    const resolvedEvents: Array<Record<string, unknown>> = []
+
+    // ── Resolve: person clarification ────────────────────────────────────
+    if (pending.state.type === 'pending_clarification') {
+      const PERSON_MAP: Record<string, string> = {
+        אמי:'ami',ami:'ami',עמי:'ami', אלכס:'alex',alex:'alex',אלכסנדר:'alex',
+        איתן:'itan',itan:'itan', דניאל:'danil',דני:'danil',danil:'danil', אסף:'assaf',assaf:'assaf',
+      }
+      const resolvedPerson = PERSON_MAP[answer] || PERSON_MAP[messageBody.trim()] || 'assaf'
+      const events = (pending.state.partial_events || []).map(ev => ({ ...ev, person: resolvedPerson })) as Array<Record<string, unknown>>
+      for (const ev of events) {
+        const { status, id } = await insertEvent(ev)
+        if (id) ev._event_id = id
+        if (status === 'saved') { saved++; cards.push(eventCard(ev, '✅ נוסף')) }
+        resolvedEvents.push(ev)
+      }
     }
 
-    // Log batch
-    await supabase.from('whatsapp_batches').insert({
-      raw_text: `[WHATSAPP from: ${from} | sid: ${messageSid}]\n\n[תשובה לברור: ${answer}]\n\n${events.map((e: Record<string, unknown>) => e.title).join(', ')}`,
-      processed_events: events,
+    // ── Resolve: duplicate decision ───────────────────────────────────────
+    if (pending.state.type === 'pending_duplicate') {
+      const { dup_pairs, clean_events } = pending.state
+      const updateAll = /עדכן הכל|update all/i.test(answer)
+      const newAll    = /חדש הכל|new all/i.test(answer)
+
+      // Save clean (non-conflicting) events first
+      for (const ev of (clean_events || [])) {
+        const { status, id } = await insertEvent(ev)
+        if (id) ev._event_id = id
+        if (status === 'saved') { saved++; cards.push(eventCard(ev, '✅ נוסף')) }
+        resolvedEvents.push(ev)
+      }
+
+      // Process each duplicate pair
+      for (let i = 0; i < dup_pairs.length; i++) {
+        const pair = dup_pairs[i]
+        const numMatch = answer.match(new RegExp(`${i + 1}\\s*(עדכן|update|חדש|new)`))
+        const doUpdate = updateAll || (!newAll && (numMatch?.[1] === 'עדכן' || numMatch?.[1] === 'update' || (dup_pairs.length === 1 && /עדכן|update/i.test(answer))))
+        const doNew    = newAll    || (!updateAll && (numMatch?.[1] === 'חדש' || numMatch?.[1] === 'new'   || (dup_pairs.length === 1 && /חדש|new/i.test(answer))))
+
+        if (doUpdate) {
+          const { status, id } = await updateEvent(pair.existing.id, pair.new_ev)
+          if (id) pair.new_ev._event_id = id
+          if (status === 'updated') { updated++; cards.push(eventCard(pair.new_ev, '🔄 עודכן')) }
+        } else if (doNew) {
+          const { status, id } = await insertEvent(pair.new_ev)
+          if (id) pair.new_ev._event_id = id
+          if (status === 'saved') { saved++; cards.push(eventCard(pair.new_ev, '✅ נוסף')) }
+        } else {
+          // Default: insert new if answer unclear
+          const { status, id } = await insertEvent(pair.new_ev)
+          if (id) pair.new_ev._event_id = id
+          if (status === 'saved') { saved++; cards.push(eventCard(pair.new_ev, '✅ נוסף')) }
+        }
+        resolvedEvents.push(pair.new_ev)
+      }
+    }
+
+    void supabase.from('whatsapp_batches').insert({
+      raw_text: `[WHATSAPP from: ${from} | sid: ${messageSid}]\n\n[תשובה: ${answer}]`,
+      processed_events: resolvedEvents,
     })
 
     const reply = saved + updated === 0
-      ? '⚠️ לא הצלחתי לשמור את האירועים. נסה שוב.'
-      : [`🗓️ *לוח אלוני — עודכן!*`, '', ...cards.map((c, i) => (i > 0 ? '\n' + c : c))].join('\n')
-
+      ? '⚠️ לא הצלחתי לשמור. נסה שוב.'
+      : [`🗓️ *לוח אלוני — עודכן!*`, '', ...cards.map((c, i) => i > 0 ? '\n' + c : c)].join('\n')
     return twimlReply(reply)
   }
 
@@ -545,38 +617,66 @@ export async function POST(request: NextRequest) {
   // ── event_add ─────────────────────────────────────────────────────────────
   // Deduplicate within the batch itself (AI sometimes returns same event twice)
   const rawEvents = (result.events || []).filter((e: Record<string, unknown>) => e.action !== 'cancel')
+  // Intra-batch dedup (AI sometimes returns same event twice)
   const events: Array<Record<string, unknown>> = []
   for (const ev of rawEvents) {
-    const isDup = events.some(existing =>
-      existing.person === ev.person &&
-      existing.date === ev.date &&
-      titlesAreSimilar(String(existing.title || ''), String(ev.title || ''))
+    const inBatchDup = events.some(x =>
+      x.person === ev.person && x.date === ev.date &&
+      titlesAreSimilar(String(x.title || ''), String(ev.title || ''))
     )
-    if (!isDup) events.push(ev)
+    if (!inBatchDup) events.push(ev)
   }
-  let saved = 0, updated = 0, skipped = 0
-  const resultLines: string[] = []
+
+  if (events.length === 0) {
+    return twimlReply('🤔 לא זיהיתי אירועים בהודעה.\nנסה: "איתן — אימון כדורגל ביום ד׳ 16:00"')
+  }
+
+  // ── Check each event for duplicates in DB — ask user if found ────────────
+  const dupPairs: DupPair[]                          = []
+  const cleanEvents: Array<Record<string, unknown>>  = []
 
   for (const ev of events) {
-    const { status, id } = await upsertEvent(ev)
+    const existing = await findDuplicate(ev)
+    if (existing) {
+      console.log('[whatsapp-inbound] Possible duplicate found:', existing.title)
+      dupPairs.push({ new_ev: ev, existing })
+    } else {
+      cleanEvents.push(ev)
+    }
+  }
+
+  // If any duplicates found → ask before touching DB
+  if (dupPairs.length > 0) {
+    const pendingState: PendingState = {
+      type: 'pending_duplicate',
+      dup_pairs: dupPairs,
+      clean_events: cleanEvents,
+      expires: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    }
+    await supabase.from('whatsapp_batches').insert({
+      raw_text: `[PENDING from: ${from}]\n\n${effectiveBody}`,
+      processed_events: pendingState as unknown as Record<string, unknown>[],
+    })
+    return twimlReply(duplicateCard(dupPairs))
+  }
+
+  // No duplicates — save all clean events directly
+  let saved = 0, skipped = 0
+  const resultLines: string[] = []
+
+  for (const ev of cleanEvents) {
+    const { status, id } = await saveEvent(ev)
     if (id) ev._event_id = id
-    if (status === 'saved')        { saved++;   resultLines.push(eventCard(ev, '✅ נוסף')) }
-    else if (status === 'updated') { updated++; resultLines.push(eventCard(ev, '🔄 עודכן')) }
+    if (status === 'saved') { saved++; resultLines.push(eventCard(ev, '✅ נוסף')) }
     else skipped++
   }
 
-  console.log(`[whatsapp-inbound] saved=${saved} updated=${updated} skipped=${skipped}`)
+  console.log(`[whatsapp-inbound] saved=${saved} skipped=${skipped}`)
+  void supabase.from('whatsapp_batches').insert({ raw_text: logText, processed_events: cleanEvents })
 
-  await supabase.from('whatsapp_batches').insert({ raw_text: logText, processed_events: events })
-
-  let reply: string
-  if (saved + updated === 0 && events.length === 0) {
-    reply = '🤔 לא זיהיתי אירועים בהודעה.\nנסה: "איתן — אימון כדורגל ביום ד׳ 16:00"'
-  } else if (saved + updated === 0) {
-    reply = '⚠️ לא הצלחתי לשמור את האירועים. נסה שוב.'
-  } else {
-    reply = ['🗓️ *לוח אלוני — עודכן!*', '', resultLines.join('\n\n')].join('\n')
-  }
+  const reply = saved === 0
+    ? '⚠️ לא הצלחתי לשמור את האירועים. נסה שוב.'
+    : ['🗓️ *לוח אלוני — עודכן!*', '', resultLines.join('\n\n')].join('\n')
 
   return twimlReply(reply)
 }
