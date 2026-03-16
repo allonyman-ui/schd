@@ -115,10 +115,10 @@ function twimlEmpty(): Response {
   })
 }
 
-// ── Download Twilio media (images, documents) ──────────────────────────────
+// ── Download Twilio media (images or audio) ────────────────────────────────
 async function downloadTwilioMedia(
   mediaUrl: string
-): Promise<{ base64: string; mediaType: string } | null> {
+): Promise<{ base64: string; mediaType: string; buffer: Buffer } | null> {
   const sid = process.env.TWILIO_ACCOUNT_SID
   const token = process.env.TWILIO_AUTH_TOKEN
   if (!sid || !token) return null
@@ -126,12 +126,55 @@ async function downloadTwilioMedia(
     const res = await fetch(mediaUrl, {
       headers: { Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}` },
     })
-    if (!res.ok) return null
-    const contentType = (res.headers.get('content-type') || 'image/jpeg').split(';')[0].trim()
-    const buffer = await res.arrayBuffer()
-    return { base64: Buffer.from(buffer).toString('base64'), mediaType: contentType }
+    if (!res.ok) { console.error('[whatsapp-inbound] Media fetch failed:', res.status); return null }
+    const contentType = (res.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim()
+    const arrayBuf = await res.arrayBuffer()
+    const buffer = Buffer.from(arrayBuf)
+    return { base64: buffer.toString('base64'), mediaType: contentType, buffer }
   } catch (err) {
     console.error('[whatsapp-inbound] Media download error:', err); return null
+  }
+}
+
+// ── Transcribe audio via OpenAI Whisper ───────────────────────────────────
+async function transcribeAudio(
+  buf: Buffer, mimeType: string
+): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) {
+    console.warn('[whatsapp-inbound] OPENAI_API_KEY not set — cannot transcribe voice')
+    return null
+  }
+  // Map MIME type to a file extension Whisper accepts
+  const ext = mimeType.includes('mp4') ? 'mp4'
+    : mimeType.includes('mpeg') || mimeType.includes('mp3') ? 'mp3'
+    : mimeType.includes('webm') ? 'webm'
+    : mimeType.includes('wav')  ? 'wav'
+    : 'ogg'  // WhatsApp voice notes are ogg/opus
+  try {
+    const formData = new FormData()
+    // Convert Buffer to plain ArrayBuffer for Blob compatibility
+    const ab = new ArrayBuffer(buf.length)
+    const view = new Uint8Array(ab)
+    buf.copy(view)
+    formData.append('file', new Blob([ab], { type: mimeType }), `voice.${ext}`)
+    formData.append('model', 'whisper-1')
+    formData.append('language', 'he')  // Hebrew — also auto-detects other languages
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: formData,
+    })
+    if (!res.ok) {
+      console.error('[whatsapp-inbound] Whisper error:', res.status, await res.text())
+      return null
+    }
+    const data = await res.json() as { text?: string }
+    console.log('[whatsapp-inbound] Whisper transcript:', data.text?.slice(0, 80))
+    return data.text || null
+  } catch (err) {
+    console.error('[whatsapp-inbound] Whisper exception:', err)
+    return null
   }
 }
 
@@ -378,18 +421,40 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Download media if present ─────────────────────────────────────────────
-  let mediaAttachment: { base64: string; mediaType: string } | null = null
+  let mediaAttachment: { base64: string; mediaType: string; buffer: Buffer } | null = null
+  let voiceTranscript: string | null = null
+
   if (numMedia > 0) {
-    const mediaUrl = params.MediaUrl0
-    const mediaType = params.MediaContentType0 || 'image/jpeg'
+    const mediaUrl  = params.MediaUrl0
+    const mediaType = params.MediaContentType0 || ''
+    console.log('[whatsapp-inbound] Media type:', mediaType)
+
     if (mediaUrl && mediaType.startsWith('image/')) {
-      console.log('[whatsapp-inbound] Downloading media:', mediaType)
       mediaAttachment = await downloadTwilioMedia(mediaUrl)
+      if (!mediaAttachment) console.warn('[whatsapp-inbound] Image download failed')
+
+    } else if (mediaUrl && (mediaType.startsWith('audio/') || mediaType.includes('ogg') || mediaType.includes('mpeg') || mediaType.includes('mp4'))) {
+      console.log('[whatsapp-inbound] Voice message detected — transcribing')
+      const audio = await downloadTwilioMedia(mediaUrl)
+      if (audio) {
+        voiceTranscript = await transcribeAudio(audio.buffer, audio.mediaType)
+        if (voiceTranscript) {
+          console.log('[whatsapp-inbound] Transcription ok, length:', voiceTranscript.length)
+        } else {
+          // No OPENAI_API_KEY or Whisper failed — let Claude know
+          voiceTranscript = '[הודעה קולית — תמלול לא זמין]'
+        }
+      }
     }
   }
 
+  // Effective text to process: transcribed voice > typed body
+  const effectiveBody = voiceTranscript
+    ? (voiceTranscript.startsWith('[') ? voiceTranscript : `[הודעה קולית]: "${voiceTranscript}"`)
+    : messageBody
+
   // ── Fetch schedule only for likely queries (saves ~200ms otherwise) ────────
-  const looksLikeQuery = /מה|מתי|יש לי|האם|מתוכנן|השבוע|היום|מחר|כמה|פגישה/i.test(messageBody)
+  const looksLikeQuery = /מה|מתי|יש לי|האם|מתוכנן|השבוע|היום|מחר|כמה|פגישה/i.test(effectiveBody)
   const schedule = looksLikeQuery ? await fetchUpcomingSchedule() : ''
 
   // ── Call Claude with unified prompt ───────────────────────────────────────
@@ -420,8 +485,8 @@ export async function POST(request: NextRequest) {
     content.push({
       type: 'text',
       text: mediaAttachment
-        ? (messageBody || 'Please extract all events and information from this image.')
-        : messageBody,
+        ? (effectiveBody || 'Extract all events and information from this image.')
+        : effectiveBody,
     })
 
     const msg = await anthropic.messages.create({
@@ -451,12 +516,13 @@ export async function POST(request: NextRequest) {
 
   // ── Handle intent ─────────────────────────────────────────────────────────
   // ── chat / event_query ────────────────────────────────────────────────────
+  const logText = voiceTranscript
+    ? `[WHATSAPP from: ${from} | sid: ${messageSid} | 🎙️ voice]\n\n${voiceTranscript}`
+    : `[WHATSAPP from: ${from} | sid: ${messageSid}]\n\n${messageBody}`
+
   if (result.intent === 'chat' || result.intent === 'event_query') {
     console.log('[whatsapp-inbound] Replying:', result.intent)
-    void supabase.from('whatsapp_batches').insert({
-      raw_text: `[WHATSAPP from: ${from} | sid: ${messageSid}]\n\n${messageBody}`,
-      processed_events: [],
-    })
+    void supabase.from('whatsapp_batches').insert({ raw_text: logText, processed_events: [] })
     return twimlReply(result.reply)
   }
 
@@ -470,7 +536,7 @@ export async function POST(request: NextRequest) {
       expires: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     }
     await supabase.from('whatsapp_batches').insert({
-      raw_text: `[PENDING from: ${from}]\n\n${messageBody}`,
+      raw_text: `[PENDING from: ${from}]\n\n${effectiveBody}`,
       processed_events: pendingState as unknown as Record<string, unknown>[],
     })
     return twimlReply(clarificationCard(result.partial_events, result.missing_field))
@@ -501,10 +567,7 @@ export async function POST(request: NextRequest) {
 
   console.log(`[whatsapp-inbound] saved=${saved} updated=${updated} skipped=${skipped}`)
 
-  await supabase.from('whatsapp_batches').insert({
-    raw_text: `[WHATSAPP from: ${from} | sid: ${messageSid}]\n\n${messageBody}`,
-    processed_events: events,
-  })
+  await supabase.from('whatsapp_batches').insert({ raw_text: logText, processed_events: events })
 
   let reply: string
   if (saved + updated === 0 && events.length === 0) {
