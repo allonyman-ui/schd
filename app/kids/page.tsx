@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { format, addDays, subDays } from 'date-fns'
 import { he } from 'date-fns/locale'
 import WeatherWidget from '@/components/WeatherWidget'
+import VideoSummaryModal from '@/components/VideoSummaryModal'
 
 interface Event {
   id: string; title: string; person: string; date: string
@@ -502,6 +503,7 @@ export default function KidsSchedulePage() {
 
   const [loadingEvents, setLoadingEvents] = useState(true)
   const [kidThemeIdx, setKidThemeIdx] = useState<Record<string,number>>({ami:0,alex:0,itan:0})
+  const [showVideoModal, setShowVideoModal] = useState(false)
 
   // Event modal
   const [showModal, setShowModal] = useState(false)
@@ -720,6 +722,10 @@ export default function KidsSchedulePage() {
           onChange={patch => setEventForm(prev => ({ ...prev, ...patch }))} />
       )}
 
+      {showVideoModal && (
+        <VideoSummaryModal onClose={() => setShowVideoModal(false)} />
+      )}
+
       {/* ── PRINT (weekly) ─────────────────────────────────────────────── */}
       {activeTab === 'week' && (() => {
         const weekDates = getWeekDates(selectedDate)
@@ -846,6 +852,13 @@ export default function KidsSchedulePage() {
                 className="bg-blue-500/80 hover:bg-blue-400/80 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition whitespace-nowrap">
                 ➕ אירוע
               </button>
+              <button
+                onClick={() => setShowVideoModal(true)}
+                title="צור סיכום וידאו שבועי"
+                className="bg-purple-500/80 hover:bg-purple-400/80 text-white text-xs font-bold px-2.5 py-1.5 rounded-xl transition whitespace-nowrap"
+              >
+                🎬
+              </button>
               <button onClick={() => window.print()}
                 className="bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs font-bold px-2.5 py-1.5 rounded-xl transition">
                 🖨️
@@ -866,6 +879,10 @@ export default function KidsSchedulePage() {
               <button onClick={() => setSelectedDate(new Date())}
                 className="text-[10px] font-bold bg-amber-500/80 hover:bg-amber-400/80 text-white px-2 py-1 rounded-lg transition whitespace-nowrap">
                 היום
+              </button>
+              <button onClick={() => setSelectedDate(addDays(new Date(), 1))}
+                className="text-[10px] font-bold bg-sky-500/80 hover:bg-sky-400/80 text-white px-2 py-1 rounded-lg transition whitespace-nowrap">
+                מחר
               </button>
               <input type="date" value={dateStr} onChange={e => setSelectedDate(new Date(e.target.value + 'T12:00:00'))}
                 className="bg-white/10 border border-white/20 text-white text-[10px] rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-white/40 w-[105px]" />

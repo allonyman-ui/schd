@@ -44,6 +44,13 @@ Relative: מחר=+1d  מחרתיים=+2d  בשבוע הבא=+7d
 Time: "16:00" "ב-16" "שעה 4 אחה\"צ"=16:00  "9 בבוקר"=09:00
 Recurring: "כל שלישי" "every Thursday" => is_recurring:true, recurrence_days:["tuesday"]
 
+FORWARDED MESSAGES — IMPORTANT:
+When the message appears forwarded or is quoting someone else (contains "הועבר", "FWD:", "כתב/ה:", or uses past tense about an upcoming event):
+- Relative dates (מחר, היום, etc.) in the ORIGINAL text referred to when it was WRITTEN, not to today
+- If the event date is ambiguous, use the EXPLICIT date if given (like "17/3"), ignore relative words like "מחר"
+- When only relative words are present and no explicit date, set a reasonable date but use the soonest future occurrence
+- The user will always be shown a confirmation before anything is saved, so prefer showing the date clearly
+
 PERSON DETECTION:
 - Named explicitly (של איתן, לאמי, איתן צריך) => use that person
 - School class group (כיתה ד, כיתה א) => clarification_needed (which child is in that class?)
@@ -202,7 +209,8 @@ async function fetchUpcomingSchedule(): Promise<string> {
 // ── Pending state (stored in whatsapp_batches) ────────────────────────────
 type PendingState =
   | { type: 'pending_clarification'; missing_field: string; partial_events: Array<Record<string, unknown>>; expires: string }
-  | { type: 'pending_duplicate'; dup_pairs: DupPair[]; clean_events: Array<Record<string, unknown>>; expires: string }
+  | { type: 'pending_duplicate';     dup_pairs: DupPair[]; clean_events: Array<Record<string, unknown>>; expires: string }
+  | { type: 'pending_confirmation';  events: Array<Record<string, unknown>>; expires: string }
 
 async function getPending(from: string) {
   const supabase = createServiceClient()
@@ -305,6 +313,54 @@ function duplicateCard(pairs: DupPair[]): string {
     lines.push('או: *עדכן הכל* / *חדש הכל*')
   }
   return lines.join('\n')
+}
+
+// Build pre-save confirmation card (always shown before any DB write)
+function confirmationCard(
+  events: Array<Record<string, unknown>>,
+  dupWarnings: Set<number>,
+): string {
+  const lines: string[] = ['📋 *בדקתי — הנה מה שמצאתי:*', '']
+  events.forEach((ev, i) => {
+    if (events.length > 1) lines.push(`*${i + 1}.*`)
+    lines.push(`📌 *${String(ev.title || '')}*`)
+    if (ev.person) lines.push(`   👤 ${HE_NAMES[ev.person as string] || String(ev.person)}`)
+    if (ev.date)   lines.push(`   📅 ${heDate(ev.date as string)}`)
+    if (ev.start_time) lines.push(`   ⏰ ${String(ev.start_time)}`)
+    if (ev.location)   lines.push(`   📍 ${String(ev.location)}`)
+    if (dupWarnings.has(i)) lines.push(`   ⚠️ _קיים אירוע דומה כבר בלוח_`)
+    if (events.length > 1 && i < events.length - 1) lines.push('')
+  })
+  lines.push('')
+  lines.push('✅ *כן* — שמור')
+  lines.push('✏️ *תקן* — ענה עם מה שצריך לשנות')
+  lines.push('❌ *בטל* — בטל')
+  return lines.join('\n')
+}
+
+// Re-apply a user correction to the pending events via Claude
+async function applyCorrectionWithClaude(
+  events: Array<Record<string, unknown>>,
+  correction: string,
+  today: string,
+): Promise<Array<Record<string, unknown>> | null> {
+  try {
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 1024,
+      system: `You are a calendar assistant. The user wants to correct these calendar events.
+TODAY: ${today}
+ORIGINAL EVENTS (JSON): ${JSON.stringify(events)}
+
+Apply the user's correction and return the updated events.
+Return ONLY valid JSON: {"events":[...same structure, with corrections applied...]}`,
+      messages: [{ role: 'user', content: correction }],
+    })
+    const raw = msg.content[0]
+    if (raw.type !== 'text') return null
+    const parsed = JSON.parse(raw.text.trim().replace(/^```json\n?/, '').replace(/\n?```$/, ''))
+    return Array.isArray(parsed.events) ? parsed.events : null
+  } catch { return null }
 }
 
 // ── Event payload builder ─────────────────────────────────────────────────
@@ -481,6 +537,63 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ── Resolve: user confirmation (always shown before any save) ─────────
+    if (pending.state.type === 'pending_confirmation') {
+      const pendingEvents = pending.state.events || []
+      const isConfirm = /^(כן|yes|אישור|ok|יס|אוק|אה|נכון|בסדר|שמור|👍|✓|confirm|approve|agree)$/i.test(answer.trim().replace(/\.$/, ''))
+      const isCancel  = /^(בטל|לא|no|cancel|סגור|עצור|ביטול|👎|stop)$/i.test(answer.trim())
+
+      if (isCancel) {
+        void supabase.from('whatsapp_batches').insert({
+          raw_text: `[WHATSAPP from: ${from} | sid: ${messageSid}]\n\n[בוטל]`,
+          processed_events: [],
+        })
+        return twimlReply('❌ בסדר, בוטל. לא נשמר כלום.')
+      }
+
+      if (isConfirm) {
+        // Save all confirmed events
+        for (const ev of pendingEvents) {
+          const { status, id } = await insertEvent(ev)
+          if (id) ev._event_id = id
+          if (status === 'saved') { saved++; cards.push(eventCard(ev, '✅ נוסף')) }
+          resolvedEvents.push(ev)
+        }
+        void supabase.from('whatsapp_batches').insert({
+          raw_text: `[WHATSAPP from: ${from} | sid: ${messageSid}]\n\n[אישור]`,
+          processed_events: resolvedEvents,
+        })
+        const reply = saved === 0
+          ? '⚠️ לא הצלחתי לשמור. נסה שוב.'
+          : [`🗓️ *לוח אלוני — עודכן!*`, '', ...cards.map((c, i) => i > 0 ? '\n' + c : c)].join('\n')
+        return twimlReply(reply)
+      }
+
+      // Treat as a correction — re-run Claude
+      const corrected = await applyCorrectionWithClaude(pendingEvents, answer, today)
+      if (corrected && corrected.length > 0) {
+        // Check again for duplicates in the corrected events
+        const dupWarnings = new Set<number>()
+        for (let i = 0; i < corrected.length; i++) {
+          const existing = await findDuplicate(corrected[i])
+          if (existing) dupWarnings.add(i)
+        }
+        const newPending: PendingState = {
+          type: 'pending_confirmation',
+          events: corrected,
+          expires: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        }
+        await supabase.from('whatsapp_batches').insert({
+          raw_text: `[PENDING from: ${from}]\n\n[תיקון: ${answer}]`,
+          processed_events: newPending as unknown as Record<string, unknown>[],
+        })
+        return twimlReply(confirmationCard(corrected, dupWarnings))
+      }
+
+      // Couldn't parse correction — re-ask
+      return twimlReply('🤔 לא הבנתי את התיקון.\nענה/י *כן* לשמירה, *בטל* לביטול, או כתוב/י מה לשנות בצורה ברורה יותר.')
+    }
+
     void supabase.from('whatsapp_batches').insert({
       raw_text: `[WHATSAPP from: ${from} | sid: ${messageSid}]\n\n[תשובה: ${answer}]`,
       processed_events: resolvedEvents,
@@ -631,54 +744,27 @@ export async function POST(request: NextRequest) {
     return twimlReply('🤔 לא זיהיתי אירועים בהודעה.\nנסה: "איתן — אימון כדורגל ביום ד׳ 16:00"')
   }
 
-  // ── Check each event for duplicates in DB — ask user if found ────────────
-  const dupPairs: DupPair[]                          = []
-  const cleanEvents: Array<Record<string, unknown>>  = []
-
-  for (const ev of events) {
-    const existing = await findDuplicate(ev)
+  // ── Check for existing similar events (warn in confirmation, don't block) ─
+  const dupWarnings = new Set<number>()
+  for (let i = 0; i < events.length; i++) {
+    const existing = await findDuplicate(events[i])
     if (existing) {
-      console.log('[whatsapp-inbound] Possible duplicate found:', existing.title)
-      dupPairs.push({ new_ev: ev, existing })
-    } else {
-      cleanEvents.push(ev)
+      console.log('[whatsapp-inbound] Similar event found (will warn):', existing.title)
+      dupWarnings.add(i)
     }
   }
 
-  // If any duplicates found → ask before touching DB
-  if (dupPairs.length > 0) {
-    const pendingState: PendingState = {
-      type: 'pending_duplicate',
-      dup_pairs: dupPairs,
-      clean_events: cleanEvents,
-      expires: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-    }
-    await supabase.from('whatsapp_batches').insert({
-      raw_text: `[PENDING from: ${from}]\n\n${effectiveBody}`,
-      processed_events: pendingState as unknown as Record<string, unknown>[],
-    })
-    return twimlReply(duplicateCard(dupPairs))
+  // ── Always confirm with user before saving anything ───────────────────────
+  const pendingState: PendingState = {
+    type: 'pending_confirmation',
+    events,
+    expires: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
   }
-
-  // No duplicates — save all clean events directly
-  let saved = 0, skipped = 0
-  const resultLines: string[] = []
-
-  for (const ev of cleanEvents) {
-    const { status, id } = await saveEvent(ev)
-    if (id) ev._event_id = id
-    if (status === 'saved') { saved++; resultLines.push(eventCard(ev, '✅ נוסף')) }
-    else skipped++
-  }
-
-  console.log(`[whatsapp-inbound] saved=${saved} skipped=${skipped}`)
-  void supabase.from('whatsapp_batches').insert({ raw_text: logText, processed_events: cleanEvents })
-
-  const reply = saved === 0
-    ? '⚠️ לא הצלחתי לשמור את האירועים. נסה שוב.'
-    : ['🗓️ *לוח אלוני — עודכן!*', '', resultLines.join('\n\n')].join('\n')
-
-  return twimlReply(reply)
+  await supabase.from('whatsapp_batches').insert({
+    raw_text: `[PENDING from: ${from}]\n\n${effectiveBody}`,
+    processed_events: pendingState as unknown as Record<string, unknown>[],
+  })
+  return twimlReply(confirmationCard(events, dupWarnings))
 }
 
 // ── GET: recent WhatsApp batches (non-pending) ────────────────────────────
