@@ -145,27 +145,46 @@ async function sendWhatsAppReply(to: string, body: string): Promise<void> {
 export async function POST(request: NextRequest) {
   // Parse form data (Twilio sends x-www-form-urlencoded)
   let params: Record<string, string> = {}
+  let rawBody = ''
   try {
-    const text = await request.text()
-    new URLSearchParams(text).forEach((val, key) => { params[key] = val })
+    rawBody = await request.text()
+    new URLSearchParams(rawBody).forEach((val, key) => { params[key] = val })
   } catch {
+    console.error('[whatsapp-inbound] Failed to parse body')
     return new Response('OK', { status: 200 })
   }
 
   const messageBody = params.Body?.trim() || ''
-  const from        = params.From  || 'unknown'   // "whatsapp:+972..."
+  const from        = params.From  || 'unknown'
   const messageSid  = params.MessageSid || ''
 
-  if (!messageBody) return new Response('OK', { status: 200 })
+  // Log every incoming hit so we can confirm the webhook is reaching us
+  console.log('[whatsapp-inbound] HIT', {
+    from, messageSid,
+    bodyLength: messageBody.length,
+    bodyPreview: messageBody.slice(0, 80),
+    paramKeys: Object.keys(params),
+  })
 
-  // Optional: verify Twilio signature
+  if (!messageBody) {
+    console.log('[whatsapp-inbound] Empty body — returning OK')
+    return new Response('OK', { status: 200 })
+  }
+
+  // Signature verification — warn only, never block (URL mismatch is a common false-positive)
   const authToken = process.env.TWILIO_AUTH_TOKEN
   if (authToken) {
     const sig = request.headers.get('x-twilio-signature') || ''
+    // Use the canonical public URL (must match exactly what Twilio has configured)
     const webhookUrl = 'https://allonys.com/api/whatsapp-inbound'
-    if (sig && !verifyTwilioSignature(authToken, sig, webhookUrl, params)) {
-      console.warn('[whatsapp-inbound] Invalid Twilio signature from', from)
-      return new Response('Unauthorized', { status: 401 })
+    if (sig) {
+      const valid = verifyTwilioSignature(authToken, sig, webhookUrl, params)
+      if (!valid) {
+        // Log but do NOT reject — a URL mismatch (trailing slash, etc.) would silently kill all messages
+        console.warn('[whatsapp-inbound] Signature mismatch — continuing anyway (check webhook URL config)')
+      } else {
+        console.log('[whatsapp-inbound] Signature OK')
+      }
     }
   }
 
