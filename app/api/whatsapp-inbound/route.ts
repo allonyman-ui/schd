@@ -9,50 +9,62 @@ export const maxDuration = 60
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 // ── Unified conversational system prompt ──────────────────────────────────
-const SYSTEM_PROMPT = (today: string, schedule: string) => `You are the WhatsApp AI assistant for the Aloni family schedule (לוח אלוני — משפחת אלוני).
-You receive messages via WhatsApp and can: add events, answer questions about the schedule, and have conversations.
+const SYSTEM_PROMPT = (today: string, schedule: string) => `You are the WhatsApp AI assistant for the Aloni family schedule.
+TODAY: ${today} (use this as the reference for ALL relative dates)
 
-FAMILY MEMBERS:
-- alex / אלכס / אלכסנדר → "alex"
-- itan / איתן → "itan"
-- ami / אמי / עמי → "ami"
-- danil / דניאל / דני → "danil"
-- assaf / אסף → "assaf"
+FAMILY MEMBERS (map any variation to the key):
+- alex  => aleks, alexander, alex, אלכס, אלכסנדר
+- itan  => itan, eytan, itai, איתן
+- ami   => ami, amy, אמי, עמי
+- danil => daniel, dani, danil, דניאל, דני
+- assaf => assaf, asaf, אסף
 
-TODAY: ${today}
+${schedule ? `CURRENT SCHEDULE (next 14 days):\n${schedule}\n` : ''}
+RETURN EXACTLY ONE JSON FORMAT:
 
-FAMILY SCHEDULE — NEXT 14 DAYS:
-${schedule || 'אין אירועים קרובים'}
+FORMAT 1 - event_add (found 1 or more events with a date):
+{"intent":"event_add","events":[{"person":"alex|itan|ami|danil|assaf","title":"concise Hebrew title 3-6 words","date":"YYYY-MM-DD","start_time":"HH:MM or null","end_time":"HH:MM or null","location":"string or null","notes":"what to bring/wear/prepare - include ALL details","is_recurring":false,"recurrence_days":null,"meeting_link":"URL or null","action":"add"}]}
 
-━━━ YOUR TASK ━━━
-Analyze the message (text, forwarded content, or image/screenshot) and return ONE of these JSON formats:
+FORMAT 2 - clarification_needed (event found but person truly unknown):
+{"intent":"clarification_needed","partial_events":[{same fields, person:""}],"clarification_question":"Hebrew question","missing_field":"person"}
 
-FORMAT 1 — event_add (message contains events with clear person + date):
-{"intent":"event_add","events":[{"person":"alex|itan|ami|danil|assaf","title":"string","date":"YYYY-MM-DD","start_time":"HH:MM or null","end_time":"HH:MM or null","location":"string or null","notes":"all details: what to bring/wear/prepare or null","is_recurring":false,"recurrence_days":null,"meeting_link":"URL or null","action":"add"}]}
+FORMAT 3 - event_query (user is asking about the schedule):
+{"intent":"event_query","reply":"Hebrew answer. Use *bold* for names/dates."}
 
-FORMAT 2 — clarification_needed (events found but PERSON is truly ambiguous):
-{"intent":"clarification_needed","partial_events":[{...same event structure, person:""}],"clarification_question":"Hebrew question asking who the event is for","missing_field":"person"}
+FORMAT 4 - chat (greeting, thanks, not schedule-related):
+{"intent":"chat","reply":"short helpful Hebrew response"}
 
-FORMAT 3 — event_query (asking about the schedule):
-{"intent":"event_query","reply":"Hebrew answer using the FAMILY SCHEDULE above. Use *bold* for names/dates. Be concise."}
+DATE AND TIME PARSING:
+Hebrew days (next occurrence from TODAY unless explicit date given):
+  aleph/rishon=Sunday  bet/sheni=Monday  gimel/shlishi=Tuesday  dalet/revii=Wednesday
+  heh/hamishi=Thursday  vav/shishi=Friday  shabbat=Saturday
+  In Hebrew: א=ראשון ב=שני ג=שלישי ד=רביעי ה=חמישי ו=שישי
+Date formats: "21/3" "21.3" "21 מרץ" "March 21" => YYYY-MM-DD
+Relative: מחר=+1d  מחרתיים=+2d  בשבוע הבא=+7d
+Time: "16:00" "ב-16" "שעה 4 אחה\"צ"=16:00  "9 בבוקר"=09:00
+Recurring: "כל שלישי" "every Thursday" => is_recurring:true, recurrence_days:["tuesday"]
 
-FORMAT 4 — chat (general conversation, questions, anything else):
-{"intent":"chat","reply":"helpful Hebrew response. Be friendly and concise. Use *bold* sparingly."}
+PERSON DETECTION:
+- Named explicitly (של איתן, לאמי, איתן צריך) => use that person
+- School class group (כיתה ד, כיתה א) => clarification_needed (which child is in that class?)
+- Child activity (חוג, אימון, בית ספר) with no name => clarification_needed
+- Work/adult meeting with no name => use "assaf"
+- Sender refers to themselves => use "assaf"
 
-PARSING RULES:
-- Hebrew dates: "יום ראשון/שני/שלישי/רביעי/חמישי/שישי/שבת" → NEXT occurrence from today
-- Hebrew abbreviations: ביום א'/ב'/ג'/ד'/ה'/ו' → א=ראשון, ב=שני, ג=שלישי, ד=רביעי, ה=חמישי, ו=שישי
-- Dates: "21/3", "21.3", "21 למרץ", "March 21" → YYYY-MM-DD
-- Relative: "מחר"=tomorrow, "מחרתיים"=day+2, "בשבוע הבא"=next week
-- Times: "16:00", "ב-16:00", "בשעה 4", "4 אחרי הצהריים"=16:00, "9 בבוקר"=09:00
-- Recurring: "כל שלישי", "every week" → is_recurring:true, recurrence_days:[...]
-- Images/screenshots: extract ALL visible text, then apply same rules above
-- If person is explicitly named or clear from context (child's name, "של אמי", school class name) → use it directly
-- If the message is about a school/activity that belongs to a specific child → use that child
-- If the sender is asking about their OWN schedule (work meeting, appointment) → use "assaf"
-- If it's truly unclear who the event belongs to → use clarification_needed (don't guess)
+IMAGE AND SCREENSHOT RULES:
+1. Read ALL text in the image carefully - Hebrew is right-to-left
+2. Extract EVERY event mentioned (school newsletters often list multiple events)
+3. Look for: event name, date (DD/MM or day name), time, location, what to bring
+4. Apply same date/person rules as for text
+5. If image has no event data => chat intent explaining what you see
 
-Return ONLY valid JSON, no explanation, no markdown code blocks.`
+QUALITY RULES:
+- Extract ALL events - never miss any
+- title: concise Hebrew (3-6 words), not the full raw text
+- notes: include ALL useful details (what to bring, dress code, contacts)
+- Never create duplicate events for same person+date+title in one response
+- If message has multiple events, return all of them in the events array
+- Return ONLY valid JSON - no markdown, no explanation, no prefix text`
 
 // ── Twilio signature verification ─────────────────────────────────────────
 function verifyTwilioSignature(
@@ -70,16 +82,20 @@ function verifyTwilioSignature(
 
 // ── Title similarity ───────────────────────────────────────────────────────
 function titlesAreSimilar(a: string, b: string): boolean {
-  const norm = (s: string) => s.toLowerCase().replace(/[\s\-_.,!?׳״'"()[\]]/g, '')
+  // Strip punctuation and normalize (Hebrew has no lowercase)
+  const norm = (s: string) => s.replace(/[\s\-_.,!?׳״'"()[\]]/g, '').toLowerCase()
   const na = norm(a); const nb = norm(b)
+  // Exact match after normalization
   if (na === nb) return true
-  if (na.length > 3 && nb.includes(na)) return true
-  if (nb.length > 3 && na.includes(nb)) return true
-  const wordsA = a.toLowerCase().split(/\s+/).filter(w => w.length > 2)
-  const wordsB = b.toLowerCase().split(/\s+/).filter(w => w.length > 2)
-  if (!wordsA.length || !wordsB.length) return false
+  // One is a substring of the other (handles "אימון" vs "אימון כדורגל")
+  if (na.length >= 4 && nb.includes(na)) return true
+  if (nb.length >= 4 && na.includes(nb)) return true
+  // Word overlap >= 70% (stricter than before to reduce false positives)
+  const wordsA = a.split(/\s+/).filter(w => w.length > 2)
+  const wordsB = b.split(/\s+/).filter(w => w.length > 2)
+  if (wordsA.length < 1 || wordsB.length < 1) return false
   const overlap = wordsA.filter(w => wordsB.includes(w)).length
-  return overlap / Math.max(wordsA.length, wordsB.length) >= 0.6
+  return overlap / Math.max(wordsA.length, wordsB.length) >= 0.7
 }
 
 // ── TwiML reply helper ────────────────────────────────────────────────────
@@ -234,14 +250,15 @@ async function upsertEvent(
   const person = (ev.person as string) || 'assaf'
   const date   = ev.date as string
   const d = new Date(date)
-  const dM3 = new Date(d); dM3.setDate(d.getDate() - 3)
-  const dP3 = new Date(d); dP3.setDate(d.getDate() + 3)
+  // Look ±1 day for potential duplicate (tight window reduces false positives)
+  const dM1 = new Date(d); dM1.setDate(d.getDate() - 1)
+  const dP1 = new Date(d); dP1.setDate(d.getDate() + 1)
 
   const { data: nearby } = await supabase
     .from('events').select('id, title, date')
     .eq('person', person)
-    .gte('date', dM3.toISOString().split('T')[0])
-    .lte('date', dP3.toISOString().split('T')[0])
+    .gte('date', dM1.toISOString().split('T')[0])
+    .lte('date', dP1.toISOString().split('T')[0])
 
   const similar = nearby?.find(e => titlesAreSimilar(e.title, ev.title as string))
   const payload = {
@@ -460,7 +477,17 @@ export async function POST(request: NextRequest) {
   }
 
   // ── event_add ─────────────────────────────────────────────────────────────
-  const events = (result.events || []).filter((e: Record<string, unknown>) => e.action !== 'cancel')
+  // Deduplicate within the batch itself (AI sometimes returns same event twice)
+  const rawEvents = (result.events || []).filter((e: Record<string, unknown>) => e.action !== 'cancel')
+  const events: Array<Record<string, unknown>> = []
+  for (const ev of rawEvents) {
+    const isDup = events.some(existing =>
+      existing.person === ev.person &&
+      existing.date === ev.date &&
+      titlesAreSimilar(String(existing.title || ''), String(ev.title || ''))
+    )
+    if (!isDup) events.push(ev)
+  }
   let saved = 0, updated = 0, skipped = 0
   const resultLines: string[] = []
 
