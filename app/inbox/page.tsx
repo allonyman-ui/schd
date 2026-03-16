@@ -18,14 +18,15 @@ interface ExtractedEvent {
   meeting_link: string | null; action?: string
 }
 
-type InputTab = 'text' | 'email' | 'calendar' | 'quick' | 'automail'
+type InputTab = 'text' | 'email' | 'calendar' | 'quick' | 'automail' | 'whatsapp'
 
 const INPUT_TABS = [
   { key: 'text'      as InputTab, icon: '📋', label: 'הדבק טקסט' },
   { key: 'email'     as InputTab, icon: '📧', label: 'מייל' },
   { key: 'calendar'  as InputTab, icon: '📅', label: 'Google Calendar' },
   { key: 'quick'     as InputTab, icon: '⚡', label: 'פקודה מהירה' },
-  { key: 'automail'  as InputTab, icon: '📨', label: 'פורוורד אוטומטי' },
+  { key: 'automail'  as InputTab, icon: '📨', label: 'פורוורד מייל' },
+  { key: 'whatsapp'  as InputTab, icon: '💬', label: 'WhatsApp' },
 ]
 
 function formatDate(d: string) {
@@ -130,6 +131,11 @@ export default function InboxPage() {
   const [loadingBatches, setLoadingBatches] = useState(false)
   const inboundAddress = process.env.NEXT_PUBLIC_POSTMARK_INBOUND_EMAIL || ''
 
+  // WhatsApp tab
+  const [waBatches, setWaBatches]       = useState<Array<{id:string; raw_text:string; processed_events:ExtractedEvent[]; created_at:string}>>([])
+  const [loadingWa, setLoadingWa]       = useState(false)
+  const waNumber = process.env.NEXT_PUBLIC_TWILIO_WHATSAPP_NUMBER || ''
+
   useEffect(() => {
     if (inputTab === 'automail') {
       setLoadingBatches(true)
@@ -137,6 +143,13 @@ export default function InboxPage() {
         .then(r => r.ok ? r.json() : [])
         .then(d => setEmailBatches(d))
         .finally(() => setLoadingBatches(false))
+    }
+    if (inputTab === 'whatsapp') {
+      setLoadingWa(true)
+      fetch('/api/whatsapp-inbound')
+        .then(r => r.ok ? r.json() : [])
+        .then(d => setWaBatches(d))
+        .finally(() => setLoadingWa(false))
     }
   }, [inputTab])
 
@@ -196,6 +209,7 @@ export default function InboxPage() {
     calendar: `הדבק כאן תוכן מיצוא Google Calendar (.ics):\n\nBEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:כדורגל — איתן\nDTSTART:20260320T160000\nDTEND:20260320T180000\nLOCATION:מגרש ספורט\nDESCRIPTION:אימון שבועי\nEND:VEVENT\nEND:VCALENDAR\n\nאו פשוט הדבק טקסט שהעתקת מ-Google Calendar.`,
     quick: ``,
     automail: ``,
+    whatsapp: ``,
   }
 
   const hints: Record<InputTab, { title: string; steps: string[] }> = {
@@ -219,7 +233,8 @@ export default function InboxPage() {
     },
     text: { title: '', steps: [] },
     quick: { title: '', steps: [] },
-    automail: { title: '', steps: [] },
+    automail:  { title: '', steps: [] },
+    whatsapp:  { title: '', steps: [] },
   }
 
   return (
@@ -367,6 +382,112 @@ export default function InboxPage() {
                         </div>
                         <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
                           <span className={`text-xs font-black px-2 py-0.5 rounded-full ${evCount > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                            {evCount > 0 ? `✅ ${evCount} אירועים` : '—'}
+                          </span>
+                          <span className="text-[10px] text-gray-300">{dateStr}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          ) : inputTab === 'whatsapp' ? (
+            /* ── WhatsApp forwarding tab ── */
+            <div>
+              {/* Number box */}
+              <div className="mb-4 rounded-2xl border-2 border-dashed border-green-300 bg-green-50 p-4 text-right">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xl">💬</span>
+                  <span className="font-black text-green-800 text-sm">מספר ה-WhatsApp של הלוח</span>
+                </div>
+                {waNumber ? (
+                  <div className="flex items-center gap-2 flex-row-reverse">
+                    <code className="flex-1 bg-white rounded-xl px-3 py-2 text-sm font-mono text-green-700 border border-green-200 text-left" dir="ltr">{waNumber}</code>
+                    <button onClick={() => navigator.clipboard.writeText(waNumber)}
+                      className="text-xs bg-green-600 text-white px-3 py-2 rounded-xl hover:bg-green-700 transition font-bold flex-shrink-0">
+                      העתק
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-green-700">הגדר <code className="bg-white px-1 rounded">NEXT_PUBLIC_TWILIO_WHATSAPP_NUMBER</code> ב-Vercel לאחר הגדרת Twilio</p>
+                )}
+                <p className="text-xs text-green-600 mt-2">
+                  העבר כל הודעת וואטסאפ — מבית ספר, קבוצת הורים, אישור תור — למספר הזה. אירועים יתווספו אוטומטית 🪄
+                </p>
+              </div>
+
+              {/* How it works */}
+              <div className="bg-green-50 border border-green-100 rounded-2xl p-4 mb-4">
+                <div className="font-black text-green-700 text-sm mb-2">🚀 איך זה עובד</div>
+                <div className="space-y-2 text-xs text-green-700">
+                  <div className="flex items-start gap-2">
+                    <span className="font-black text-green-400 flex-shrink-0">1.</span>
+                    <span>קיבלת הודעה בוואטסאפ עם מידע על אירוע? פשוט העבר (Forward) אותה למספר הזה</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="font-black text-green-400 flex-shrink-0">2.</span>
+                    <span>Claude ינתח את ההודעה ויחלץ: שם האירוע, תאריך, שעה, מיקום, מה להביא</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="font-black text-green-400 flex-shrink-0">3.</span>
+                    <span>האירוע נוסף ללוח <strong>אוטומטית</strong> — ללא צורך באישור</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="font-black text-green-400 flex-shrink-0">4.</span>
+                    <span>אם האירוע כבר קיים — הפרטים <strong>מתעדכנים</strong> אוטומטית עם המידע הכי עדכני</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="font-black text-green-400 flex-shrink-0">5.</span>
+                    <span>תקבל תשובה מיידית בוואטסאפ עם סיכום מה נוסף/עודכן</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Setup guide */}
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-4">
+                <div className="font-black text-blue-700 text-sm mb-2">⚙️ הגדרה חד-פעמית (10 דקות)</div>
+                <ol className="space-y-1.5">
+                  {[
+                    <>הירשם בחינם ל-<a href="https://twilio.com" target="_blank" rel="noopener noreferrer" className="underline font-bold">twilio.com</a> → קבל $15 קרדיט חינם</>,
+                    <>ב-Console: <strong>Messaging → Try it out → Send a WhatsApp message</strong> (Sandbox לבדיקה) <em>- או -</em> קנה מספר WhatsApp Business</>,
+                    <>ב-Phone Numbers → Manage → Active Numbers → לחץ על המספר → Messaging webhook:<br/><code className="bg-blue-100 px-1 rounded text-xs">https://allonys.com/api/whatsapp-inbound</code></>,
+                    'העתק את Account SID ו-Auth Token → הוסף לVercel: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN',
+                    <>הוסף לVercel: <code className="bg-blue-100 px-1 rounded">NEXT_PUBLIC_TWILIO_WHATSAPP_NUMBER</code> = מספר הוואטסאפ</>,
+                    '✅ שלח הודעת בדיקה ובדוק שהיא מופיעה כאן',
+                  ].map((s, i) => (
+                    <li key={i} className="text-xs text-blue-600 flex gap-2">
+                      <span className="font-black flex-shrink-0 text-blue-400">{i+1}.</span><span>{s}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+              {/* Recent messages */}
+              <div className="font-black text-gray-700 text-sm mb-2">📬 הודעות וואטסאפ שעובדו לאחרונה</div>
+              {loadingWa ? (
+                <div className="text-center py-6 text-gray-400 text-sm">⏳ טוען...</div>
+              ) : waBatches.length === 0 ? (
+                <div className="text-center py-6 text-gray-300 text-sm">עדיין לא התקבלו הודעות וואטסאפ</div>
+              ) : (
+                <div className="space-y-2">
+                  {waBatches.map(batch => {
+                    const fromMatch = batch.raw_text.match(/from: (whatsapp:\+[\d]+)/i)
+                    const from = fromMatch?.[1]?.replace('whatsapp:', '') || 'לא ידוע'
+                    // Extract preview: first line after the header
+                    const lines = batch.raw_text.split('\n').filter(Boolean)
+                    const preview = lines.slice(2).join(' ').slice(0, 80) || '(הודעה ריקה)'
+                    const evCount = batch.processed_events?.length ?? 0
+                    const dateStr = new Date(batch.created_at).toLocaleDateString('he-IL', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })
+                    return (
+                      <div key={batch.id} className="flex items-center gap-3 flex-row-reverse bg-white rounded-xl border border-gray-100 px-3 py-2.5 shadow-sm">
+                        <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-base flex-shrink-0">💬</div>
+                        <div className="flex-1 text-right min-w-0">
+                          <div className="font-bold text-sm text-gray-800 truncate">{preview}</div>
+                          <div className="text-xs text-gray-400 truncate">{from}</div>
+                        </div>
+                        <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
+                          <span className={`text-xs font-black px-2 py-0.5 rounded-full ${evCount > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                             {evCount > 0 ? `✅ ${evCount} אירועים` : '—'}
                           </span>
                           <span className="text-[10px] text-gray-300">{dateStr}</span>
