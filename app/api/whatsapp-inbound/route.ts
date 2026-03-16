@@ -333,7 +333,7 @@ function confirmationCard(
   })
   lines.push('')
   lines.push('✅ *כן* — שמור')
-  lines.push('✏️ *תקן* — ענה עם מה שצריך לשנות')
+  lines.push('✏️ *תקן* — כתוב מה לשנות (תאריך / שעה / שם / מיקום...)')
   lines.push('❌ *בטל* — בטל')
   return lines.join('\n')
 }
@@ -482,20 +482,39 @@ export async function POST(request: NextRequest) {
     let saved = 0, updated = 0
     const resolvedEvents: Array<Record<string, unknown>> = []
 
-    // ── Resolve: person clarification ────────────────────────────────────
+    // ── Resolve: person clarification → route to confirmation (don't save yet) ─
     if (pending.state.type === 'pending_clarification') {
       const PERSON_MAP: Record<string, string> = {
         אמי:'ami',ami:'ami',עמי:'ami', אלכס:'alex',alex:'alex',אלכסנדר:'alex',
         איתן:'itan',itan:'itan', דניאל:'danil',דני:'danil',danil:'danil', אסף:'assaf',assaf:'assaf',
       }
-      const resolvedPerson = PERSON_MAP[answer] || PERSON_MAP[messageBody.trim()] || 'assaf'
-      const events = (pending.state.partial_events || []).map(ev => ({ ...ev, person: resolvedPerson })) as Array<Record<string, unknown>>
-      for (const ev of events) {
-        const { status, id } = await insertEvent(ev)
-        if (id) ev._event_id = id
-        if (status === 'saved') { saved++; cards.push(eventCard(ev, '✅ נוסף')) }
-        resolvedEvents.push(ev)
+      const resolvedPerson = PERSON_MAP[answer] || PERSON_MAP[messageBody.trim()] || null
+
+      if (!resolvedPerson) {
+        // Unknown person — re-ask
+        return twimlReply(
+          '🤔 לא זיהיתי שם.\nענה/י בבקשה: *אמי / אלכס / איתן / דניאל / אסף*'
+        )
       }
+
+      const resolvedEvs = (pending.state.partial_events || []).map(ev => ({ ...ev, person: resolvedPerson })) as Array<Record<string, unknown>>
+
+      // Check for duplicates then show confirmation
+      const dupWarn = new Set<number>()
+      for (let i = 0; i < resolvedEvs.length; i++) {
+        const existing = await findDuplicate(resolvedEvs[i])
+        if (existing) dupWarn.add(i)
+      }
+      const confirmPending: PendingState = {
+        type: 'pending_confirmation',
+        events: resolvedEvs,
+        expires: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      }
+      await supabase.from('whatsapp_batches').insert({
+        raw_text: `[PENDING from: ${from}]\n\n[אחרי זיהוי: ${resolvedPerson}]`,
+        processed_events: confirmPending as unknown as Record<string, unknown>[],
+      })
+      return twimlReply(confirmationCard(resolvedEvs, dupWarn))
     }
 
     // ── Resolve: duplicate decision ───────────────────────────────────────
