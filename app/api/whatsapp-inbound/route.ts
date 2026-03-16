@@ -89,8 +89,9 @@ async function sendWhatsAppReply(to: string, body: string): Promise<void> {
   const fromRaw = process.env.TWILIO_WHATSAPP_NUMBER || ''
   const from = fromRaw.startsWith('whatsapp:') ? fromRaw : `whatsapp:${fromRaw}`
   if (!sid || !token || !fromRaw) {
-    console.warn('[whatsapp-inbound] Missing Twilio credentials — reply not sent'); return
+    console.warn('[whatsapp-inbound] Missing Twilio creds — sid:', !!sid, 'token:', !!token, 'from:', !!fromRaw); return
   }
+  console.log('[whatsapp-inbound] Sending reply via REST to:', to, 'from:', from.slice(0, 20))
   try {
     const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
       method: 'POST',
@@ -413,8 +414,8 @@ export async function POST(request: NextRequest) {
     })
 
     const msg = await anthropic.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 2048,
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 1024,
       system: SYSTEM_PROMPT(today, schedule),
       messages: [{ role: 'user', content }],
     })
@@ -438,33 +439,37 @@ export async function POST(request: NextRequest) {
   console.log('[whatsapp-inbound] Intent:', result.intent)
 
   // ── Handle intent ─────────────────────────────────────────────────────────
+  // ── Send reply immediately (before DB writes to avoid timeout) ────────────
   if (result.intent === 'chat' || result.intent === 'event_query') {
-    // Log batch
-    await supabase.from('whatsapp_batches').insert({
+    console.log('[whatsapp-inbound] Sending chat/query reply')
+    await sendWhatsAppReply(from, result.reply)
+    // Log async (don't block reply)
+    void supabase.from('whatsapp_batches').insert({
       raw_text: `[WHATSAPP from: ${from} | sid: ${messageSid}]\n\n${messageBody}`,
       processed_events: [],
     })
-    await sendWhatsAppReply(from, result.reply)
     return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
   }
 
   if (result.intent === 'clarification_needed') {
-    // Save partial events as pending state
+    console.log('[whatsapp-inbound] Sending clarification question')
+    const clarQuestion = clarificationCard(result.partial_events, result.missing_field)
+    await sendWhatsAppReply(from, clarQuestion)
+    // Save pending state async
     const pendingState: PendingState = {
       type: 'pending_clarification',
       missing_field: result.missing_field,
       partial_events: result.partial_events,
       expires: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     }
-    await supabase.from('whatsapp_batches').insert({
+    void supabase.from('whatsapp_batches').insert({
       raw_text: `[PENDING from: ${from}]\n\n${messageBody}`,
       processed_events: pendingState as unknown as Record<string, unknown>[],
     })
-    await sendWhatsAppReply(from, clarificationCard(result.partial_events, result.missing_field))
     return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
   }
 
-  // event_add
+  // ── event_add: save events then reply ─────────────────────────────────────
   const events = (result.events || []).filter((e: Record<string, unknown>) => e.action !== 'cancel')
   let saved = 0, updated = 0, skipped = 0
   const resultLines: string[] = []
@@ -472,20 +477,14 @@ export async function POST(request: NextRequest) {
   for (const ev of events) {
     const { status, id } = await upsertEvent(ev)
     if (id) ev._event_id = id
-    if (status === 'saved') { saved++; resultLines.push(eventCard(ev, '✅ נוסף')) }
+    if (status === 'saved')   { saved++;   resultLines.push(eventCard(ev, '✅ נוסף')) }
     else if (status === 'updated') { updated++; resultLines.push(eventCard(ev, '🔄 עודכן')) }
     else skipped++
   }
 
-  // Log batch
-  await supabase.from('whatsapp_batches').insert({
-    raw_text: `[WHATSAPP from: ${from} | sid: ${messageSid}]\n\n${messageBody}`,
-    processed_events: events,
-  })
-
   console.log(`[whatsapp-inbound] saved=${saved} updated=${updated} skipped=${skipped}`)
 
-  // Build reply
+  // Build and send reply
   let reply: string
   if (saved + updated === 0 && events.length === 0) {
     reply = '🤔 לא זיהיתי אירועים בהודעה.\nנסה: "איתן — אימון כדורגל ביום ד׳ 16:00"'
@@ -496,6 +495,13 @@ export async function POST(request: NextRequest) {
   }
 
   await sendWhatsAppReply(from, reply)
+
+  // Log batch async (don't block reply)
+  void supabase.from('whatsapp_batches').insert({
+    raw_text: `[WHATSAPP from: ${from} | sid: ${messageSid}]\n\n${messageBody}`,
+    processed_events: events,
+  })
+
   return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
 }
 
