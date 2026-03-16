@@ -408,7 +408,7 @@ export async function POST(request: NextRequest) {
 
     const msg = await anthropic.messages.create({
       model: 'claude-3-5-haiku-20241022',
-      max_tokens: 1024,
+      max_tokens: 2048,
       system: SYSTEM_PROMPT(today, schedule),
       messages: [{ role: 'user', content }],
     })
@@ -419,8 +419,10 @@ export async function POST(request: NextRequest) {
       result = JSON.parse(jsonText)
     }
   } catch (err) {
-    console.error('[whatsapp-inbound] Claude error:', err)
-    return twimlReply('⚠️ שגיאת AI — נסה שוב בעוד רגע.')
+    // Surface the real error in reply so we can diagnose quickly
+    const errMsg = err instanceof Error ? err.message.slice(0, 140) : String(err).slice(0, 140)
+    console.error('[whatsapp-inbound] Claude error:', errMsg)
+    return twimlReply(`⚠️ שגיאת AI: ${errMsg}`)
   }
 
   if (!result) {
