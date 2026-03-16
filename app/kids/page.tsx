@@ -822,62 +822,75 @@ export default function KidsSchedulePage() {
       {/* ── SCREEN ─────────────────────────────────────────────────────── */}
       <div className="screen-only max-w-6xl mx-auto px-3 pb-12">
 
-        {/* Top bar */}
-        <div className="flex items-center justify-between mb-4 no-print gap-2 flex-row-reverse flex-wrap">
-          <div className="flex gap-2">
-            <button onClick={() => window.print()} className="bg-gray-800 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-gray-600 transition shadow-md whitespace-nowrap">🖨️ הדפס</button>
-            <button onClick={() => openAddEvent(activeTab !== 'kids' && activeTab !== 'family' && activeTab !== 'stats' && activeTab !== 'week' ? activeTab : '')}
-              className="bg-blue-600 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-blue-700 transition shadow-md whitespace-nowrap">➕ הוסף אירוע</button>
-          </div>
-          <div className="flex items-center gap-2 flex-row-reverse flex-wrap">
-            <button onClick={() => setSelectedDate(d => addDays(d, 1))} className="w-10 h-10 rounded-full bg-white border-2 border-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-600 shadow text-xl font-bold">›</button>
-            <input type="date" value={dateStr} onChange={e => setSelectedDate(new Date(e.target.value + 'T12:00:00'))} className="border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white shadow-sm" />
-            <button onClick={() => setSelectedDate(d => subDays(d, 1))} className="w-10 h-10 rounded-full bg-white border-2 border-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-600 shadow text-xl font-bold">‹</button>
-            <button onClick={() => setSelectedDate(new Date())} className="text-sm font-bold bg-white border-2 border-amber-400 text-amber-600 hover:bg-amber-50 px-3 py-1.5 rounded-xl shadow-sm transition">היום</button>
-          </div>
-        </div>
-
-        {/* ── Hero header ──────────────────────────────────────────────── */}
+        {/* ── Hero header (all-in-one) ───────────────────────────────── */}
         <div className="mb-5 no-print rounded-3xl overflow-hidden shadow-2xl"
           style={{ background: 'linear-gradient(135deg,#0a0f1e 0%,#0f2744 40%,#1a3a6e 70%,#0f2744 100%)' }}>
 
-          {/* Top band: title + clock + weather */}
-          <div className="px-5 pt-5 pb-4 flex items-center justify-between gap-4">
+          {/* Top strip: actions + date nav */}
+          <div className="px-4 pt-3 pb-0 flex items-center justify-between gap-2 flex-row-reverse">
 
-            {/* Right: family name + date (RTL — visually left in LTR container) */}
-            <div className="flex-shrink-0 text-right">
-              <div className="flex items-center gap-2 justify-end mb-0.5">
-                <h1 className="text-lg font-black text-white tracking-tight leading-none">משפחת אלוני</h1>
-                <span className="text-xl leading-none">🏠</span>
-              </div>
-              <div className="text-sky-300/80 text-xs font-semibold tracking-wide">{dateLabel}</div>
-              {/* Live indicator */}
-              <div className="flex items-center gap-1.5 justify-end mt-1.5">
-                <span className="text-[10px] text-emerald-400/70 font-semibold tracking-widest uppercase">Live</span>
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              </div>
+            {/* Right: family name + live dot */}
+            <div className="flex items-center gap-2 flex-row-reverse">
+              <span className="text-base leading-none">🏠</span>
+              <h1 className="text-sm font-black text-white tracking-tight leading-none">משפחת אלוני</h1>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             </div>
 
-            {/* Center: big clock */}
+            {/* Left: action buttons */}
+            <div className="flex items-center gap-1.5">
+              <a href="/inbox"
+                className="flex items-center gap-1 bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition whitespace-nowrap">
+                ✚ הכנס
+              </a>
+              <button onClick={() => openAddEvent(activeTab !== 'kids' && activeTab !== 'family' && activeTab !== 'stats' && activeTab !== 'week' ? activeTab : '')}
+                className="bg-blue-500/80 hover:bg-blue-400/80 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition whitespace-nowrap">
+                ➕ אירוע
+              </button>
+              <button onClick={() => window.print()}
+                className="bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs font-bold px-2.5 py-1.5 rounded-xl transition">
+                🖨️
+              </button>
+              <button onClick={async () => { await fetch('/api/auth', { method: 'DELETE' }); window.location.href = '/login' }}
+                className="bg-white/10 hover:bg-white/20 text-white/50 hover:text-white/80 text-xs px-2.5 py-1.5 rounded-xl transition">
+                יציאה
+              </button>
+            </div>
+          </div>
+
+          {/* Clock + date nav + weather row */}
+          <div className="px-4 pt-2 pb-3 flex items-center justify-between gap-3">
+
+            {/* Date nav */}
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <button onClick={() => setSelectedDate(d => addDays(d, 1))} className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white font-bold text-base">›</button>
+              <button onClick={() => setSelectedDate(new Date())}
+                className="text-[10px] font-bold bg-amber-500/80 hover:bg-amber-400/80 text-white px-2 py-1 rounded-lg transition whitespace-nowrap">
+                היום
+              </button>
+              <input type="date" value={dateStr} onChange={e => setSelectedDate(new Date(e.target.value + 'T12:00:00'))}
+                className="bg-white/10 border border-white/20 text-white text-[10px] rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-white/40 w-[105px]" />
+              <button onClick={() => setSelectedDate(d => subDays(d, 1))} className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white font-bold text-base">‹</button>
+            </div>
+
+            {/* Clock — center */}
             <div className="flex-1 flex justify-center">
               <LiveClock />
             </div>
 
-            {/* Left: weather */}
+            {/* Weather */}
             <div className="flex-shrink-0">
               <WeatherWidget />
             </div>
-
           </div>
 
-          {/* Thin separator */}
-          <div className="mx-5 h-px bg-white/10" />
+          {/* Separator */}
+          <div className="mx-4 h-px bg-white/10" />
 
-          {/* ── Tab bar ── */}
-          <div className="px-4 py-2.5 flex gap-1.5 overflow-x-auto">
+          {/* Tab bar */}
+          <div className="px-4 py-2 flex gap-1 overflow-x-auto">
             {TABS.map(tab => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                className={`px-3.5 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all flex-shrink-0
+                className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all flex-shrink-0
                   ${activeTab === tab.key
                     ? 'bg-white text-gray-900 shadow-md'
                     : 'text-white/50 hover:text-white/90 hover:bg-white/10'
@@ -891,15 +904,6 @@ export default function KidsSchedulePage() {
         {/* ── FAMILY TAB ─────────────────────────────────────────────── */}
         {activeTab === 'family' && (
           <div className="max-w-4xl mx-auto">
-            <div className="rounded-3xl mb-4 px-6 py-5 text-center shadow-md"
-              style={{ background: 'linear-gradient(135deg,#1e3a5f,#2d6a9f,#1e3a5f)' }}>
-              <div className="text-3xl font-black text-white mb-1">🏠 משפחת אלוני</div>
-              <div className="text-blue-200 text-sm">{dateLabel}</div>
-              <div className="flex justify-center gap-4 mt-3 text-blue-100 text-xs">
-                <span>👥 {FAMILY_PEOPLE.filter(p => getPersonEvents(p.key).length > 0).length} עם אירועים</span>
-                <span>📋 {FAMILY_PEOPLE.reduce((s,p) => s+getPersonEvents(p.key).length, 0)} אירועים סה&quot;כ</span>
-              </div>
-            </div>
             <div className="bg-white rounded-3xl shadow-lg overflow-hidden border border-gray-100">
               {FAMILY_PEOPLE.map((person, idx) => {
                 const evs = getPersonEvents(person.key)

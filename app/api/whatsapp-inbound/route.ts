@@ -47,9 +47,10 @@ PARSING RULES:
 - Times: "16:00", "ב-16:00", "בשעה 4", "4 אחרי הצהריים"=16:00, "9 בבוקר"=09:00
 - Recurring: "כל שלישי", "every week" → is_recurring:true, recurrence_days:[...]
 - Images/screenshots: extract ALL visible text, then apply same rules above
-- If person is clear from context (child's name, "של אמי", school class) → DON'T ask, use it
-- Only use clarification_needed if person is genuinely impossible to determine
-- Default person = "assaf" for adult-addressed messages (work meetings, etc.)
+- If person is explicitly named or clear from context (child's name, "של אמי", school class name) → use it directly
+- If the message is about a school/activity that belongs to a specific child → use that child
+- If the sender is asking about their OWN schedule (work meeting, appointment) → use "assaf"
+- If it's truly unclear who the event belongs to → use clarification_needed (don't guess)
 
 Return ONLY valid JSON, no explanation, no markdown code blocks.`
 
@@ -173,11 +174,67 @@ async function deletePending(id: string) {
   await supabase.from('whatsapp_batches').delete().eq('id', id)
 }
 
+// ── Hebrew date/person formatting ────────────────────────────────────────
+const HE_NAMES: Record<string, string> = {
+  alex: 'אלכס', itan: 'איתן', ami: 'אמי', danil: 'דניאל', assaf: 'אסף',
+}
+const HE_DAYS  = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת']
+const HE_MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר']
+
+function heDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr + 'T12:00:00') // noon avoids timezone shift
+    return `יום ${HE_DAYS[d.getDay()]}, ${d.getDate()} ב${HE_MONTHS[d.getMonth()]}`
+  } catch { return dateStr }
+}
+
+// Build a rich WhatsApp card for a single event
+function eventCard(ev: Record<string, unknown>, status: '✅ נוסף' | '🔄 עודכן'): string {
+  const lines: string[] = [`${status} *${String(ev.title || '')}*`]
+  if (ev.person) lines.push(`👤 ל${HE_NAMES[ev.person as string] || String(ev.person)}`)
+  if (ev.date)   lines.push(`📅 ${heDate(ev.date as string)}`)
+  if (ev.start_time) {
+    const time = ev.end_time ? `${ev.start_time}–${ev.end_time}` : String(ev.start_time)
+    lines.push(`⏰ ${time}`)
+  }
+  if (ev.location)     lines.push(`📍 ${String(ev.location)}`)
+  if (ev.notes)        lines.push(`📝 ${String(ev.notes).slice(0, 80)}`)
+  if (ev.meeting_link) lines.push(`🔗 ${String(ev.meeting_link).slice(0, 60)}`)
+  if (ev.is_recurring && ev.recurrence_days) {
+    const days = (ev.recurrence_days as string[]).map(d => HE_DAYS[['sunday','monday','tuesday','wednesday','thursday','friday','saturday'].indexOf(d)] || d)
+    lines.push(`🔄 כל ${days.join(', ')}`)
+  }
+  return lines.join('\n')
+}
+
+// Build clarification question with event preview
+function clarificationCard(partialEvents: Array<Record<string, unknown>>, missingField: string): string {
+  const lines: string[] = ['🤔 *יש לי שאלה לפני שאשמור:*', '']
+
+  partialEvents.forEach(ev => {
+    lines.push(`📌 *${String(ev.title || 'אירוע')}*`)
+    if (ev.date)       lines.push(`   📅 ${heDate(ev.date as string)}`)
+    if (ev.start_time) lines.push(`   ⏰ ${String(ev.start_time)}`)
+    if (ev.location)   lines.push(`   📍 ${String(ev.location)}`)
+  })
+
+  lines.push('')
+  if (missingField === 'person') {
+    lines.push('👥 *למי להוסיף את זה?*')
+    lines.push('ענה/י: *אמי / אלכס / איתן / דניאל / אסף*')
+  } else if (missingField === 'date') {
+    lines.push('📅 *מתי זה?*')
+    lines.push('ענה/י עם תאריך (לדוגמה: "יום ד׳ 19/3" או "מחר")')
+  }
+
+  return lines.join('\n')
+}
+
 // ── Smart event upsert ────────────────────────────────────────────────────
 async function upsertEvent(
   ev: Record<string, unknown>
-): Promise<'saved' | 'updated' | 'skipped'> {
-  if (!ev.title || !ev.date) return 'skipped'
+): Promise<{ status: 'saved' | 'updated' | 'skipped'; id: string | null }> {
+  if (!ev.title || !ev.date) return { status: 'skipped', id: null }
   const supabase = createServiceClient()
   const person = (ev.person as string) || 'assaf'
   const date   = ev.date as string
@@ -203,10 +260,11 @@ async function upsertEvent(
 
   if (similar) {
     const { error } = await supabase.from('events').update(payload).eq('id', similar.id)
-    return error ? 'skipped' : 'updated'
+    return error ? { status: 'skipped', id: null } : { status: 'updated', id: similar.id }
   } else {
-    const { error } = await supabase.from('events').insert({ ...payload, person, completed: false })
-    return error ? 'skipped' : 'saved'
+    const { data, error } = await supabase.from('events')
+      .insert({ ...payload, person, completed: false }).select('id').single()
+    return error ? { status: 'skipped', id: null } : { status: 'saved', id: data?.id ?? null }
   }
 }
 
@@ -217,7 +275,7 @@ export async function POST(request: NextRequest) {
     const text = await request.text()
     new URLSearchParams(text).forEach((val, key) => { params[key] = val })
   } catch {
-    return new Response('OK', { status: 200 })
+    return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
   }
 
   const messageBody = params.Body?.trim() || ''
@@ -234,7 +292,21 @@ export async function POST(request: NextRequest) {
 
   if (!messageBody && numMedia === 0) {
     console.log('[whatsapp-inbound] Empty — skipping')
-    return new Response('OK', { status: 200 })
+    return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
+  }
+
+  // Deduplication: if we already processed this MessageSid, skip (Twilio retries)
+  if (messageSid) {
+    const supabaseCheck = createServiceClient()
+    const { data: existing } = await supabaseCheck
+      .from('whatsapp_batches')
+      .select('id')
+      .like('raw_text', `%sid: ${messageSid}%`)
+      .limit(1)
+    if (existing && existing.length > 0) {
+      console.log('[whatsapp-inbound] Duplicate MessageSid — skipping', messageSid)
+      return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
+    }
   }
 
   // Signature check (warn only)
@@ -272,11 +344,12 @@ export async function POST(request: NextRequest) {
     })) as Array<Record<string, unknown>>
 
     let saved = 0, updated = 0
-    const lines: string[] = []
+    const cards: string[] = []
     for (const ev of events) {
-      const r = await upsertEvent(ev)
-      if (r === 'saved') { saved++; lines.push(`✅ נוסף: ${String(ev.title)}`) }
-      else if (r === 'updated') { updated++; lines.push(`🔄 עודכן: ${String(ev.title)}`) }
+      const { status, id } = await upsertEvent(ev)
+      if (id) ev._event_id = id
+      if (status === 'saved') { saved++; cards.push(eventCard(ev, '✅ נוסף')) }
+      else if (status === 'updated') { updated++; cards.push(eventCard(ev, '🔄 עודכן')) }
     }
 
     // Log batch
@@ -287,10 +360,10 @@ export async function POST(request: NextRequest) {
 
     const reply = saved + updated === 0
       ? '⚠️ לא הצלחתי לשמור את האירועים. נסה שוב.'
-      : [`🗓️ *לוח אלוני — עודכן!*`, '', ...lines, '', `${saved + updated} אירועים ל${answer}`].join('\n')
+      : [`🗓️ *לוח אלוני — עודכן!*`, '', ...cards.map((c, i) => (i > 0 ? '\n' + c : c))].join('\n')
 
     await sendWhatsAppReply(from, reply)
-    return new Response('OK', { status: 200 })
+    return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
   }
 
   // ── Download media if present ─────────────────────────────────────────────
@@ -354,12 +427,12 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('[whatsapp-inbound] Claude error:', err)
     await sendWhatsAppReply(from, '⚠️ שגיאת AI — נסה שוב בעוד רגע.')
-    return new Response('OK', { status: 200 })
+    return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
   }
 
   if (!result) {
     await sendWhatsAppReply(from, '⚠️ לא הצלחתי לנתח את ההודעה. נסה שוב.')
-    return new Response('OK', { status: 200 })
+    return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
   }
 
   console.log('[whatsapp-inbound] Intent:', result.intent)
@@ -372,7 +445,7 @@ export async function POST(request: NextRequest) {
       processed_events: [],
     })
     await sendWhatsAppReply(from, result.reply)
-    return new Response('OK', { status: 200 })
+    return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
   }
 
   if (result.intent === 'clarification_needed') {
@@ -387,8 +460,8 @@ export async function POST(request: NextRequest) {
       raw_text: `[PENDING from: ${from}]\n\n${messageBody}`,
       processed_events: pendingState as unknown as Record<string, unknown>[],
     })
-    await sendWhatsAppReply(from, result.clarification_question)
-    return new Response('OK', { status: 200 })
+    await sendWhatsAppReply(from, clarificationCard(result.partial_events, result.missing_field))
+    return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
   }
 
   // event_add
@@ -397,9 +470,10 @@ export async function POST(request: NextRequest) {
   const resultLines: string[] = []
 
   for (const ev of events) {
-    const r = await upsertEvent(ev)
-    if (r === 'saved') { saved++; resultLines.push(`✅ נוסף: ${ev.title}`) }
-    else if (r === 'updated') { updated++; resultLines.push(`🔄 עודכן: ${ev.title}`) }
+    const { status, id } = await upsertEvent(ev)
+    if (id) ev._event_id = id
+    if (status === 'saved') { saved++; resultLines.push(eventCard(ev, '✅ נוסף')) }
+    else if (status === 'updated') { updated++; resultLines.push(eventCard(ev, '🔄 עודכן')) }
     else skipped++
   }
 
@@ -418,16 +492,11 @@ export async function POST(request: NextRequest) {
   } else if (saved + updated === 0) {
     reply = '⚠️ לא הצלחתי לשמור את האירועים (שגיאת שרת). נסה שוב.'
   } else {
-    const stats = [
-      saved   > 0 ? `✅ ${saved} נוספו`   : '',
-      updated > 0 ? `🔄 ${updated} עודכנו` : '',
-      skipped > 0 ? `⏭️ ${skipped} דולגו`  : '',
-    ].filter(Boolean).join(' · ')
-    reply = ['🗓️ *לוח אלוני — עודכן!*', '', ...resultLines, '', stats].join('\n')
+    reply = ['🗓️ *לוח אלוני — עודכן!*', '', resultLines.join('\n\n')].join('\n')
   }
 
   await sendWhatsAppReply(from, reply)
-  return new Response('OK', { status: 200 })
+  return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
 }
 
 // ── GET: recent WhatsApp batches (non-pending) ────────────────────────────

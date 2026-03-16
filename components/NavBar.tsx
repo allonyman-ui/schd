@@ -10,7 +10,7 @@ export default function NavBar() {
   }
 
   const pathname = usePathname()
-  if (pathname === '/login') return null
+  if (pathname === '/login' || pathname === '/') return null
 
   const isInbox = pathname === '/inbox'
 

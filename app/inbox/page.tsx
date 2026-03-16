@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { format } from 'date-fns'
 
 const PERSON_OPTIONS = ['ami', 'alex', 'itan', 'danil', 'assaf']
 const PERSON_LABELS: Record<string, string> = { alex:'אלכס', itan:'איתן', ami:'אמי', danil:'דניאל', assaf:'אסף' }
@@ -18,16 +17,6 @@ interface ExtractedEvent {
   meeting_link: string | null; action?: string
 }
 
-type InputTab = 'text' | 'email' | 'calendar' | 'quick' | 'automail' | 'whatsapp'
-
-const INPUT_TABS = [
-  { key: 'text'      as InputTab, icon: '📋', label: 'הדבק טקסט' },
-  { key: 'email'     as InputTab, icon: '📧', label: 'מייל' },
-  { key: 'calendar'  as InputTab, icon: '📅', label: 'Google Calendar' },
-  { key: 'quick'     as InputTab, icon: '⚡', label: 'פקודה מהירה' },
-  { key: 'automail'  as InputTab, icon: '📨', label: 'פורוורד מייל' },
-  { key: 'whatsapp'  as InputTab, icon: '💬', label: 'WhatsApp' },
-]
 
 function formatDate(d: string) {
   try { return new Date(d).toLocaleDateString('he-IL', { weekday:'short', day:'numeric', month:'short' }) }
@@ -117,29 +106,22 @@ function EventPreviewCard({ ev, index, onUpdate, onRemove, needsFix }: {
 }
 
 export default function InboxPage() {
-  const [inputTab, setInputTab] = useState<InputTab>('text')
   const [rawText, setRawText] = useState('')
-  const [quickCmd, setQuickCmd] = useState('')
   const [processing, setProcessing] = useState(false)
   const [extractedEvents, setExtractedEvents] = useState<ExtractedEvent[]>([])
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
   const [saving, setSaving] = useState(false)
 
-  // Auto-mail tab
-  const [emailBatches, setEmailBatches] = useState<Array<{id:string; raw_text:string; processed_events:ExtractedEvent[]; created_at:string}>>([])
-  const [loadingBatches, setLoadingBatches] = useState(false)
-  const inboundAddress = process.env.NEXT_PUBLIC_POSTMARK_INBOUND_EMAIL || ''
-
-  // WhatsApp tab
-  const [waBatches, setWaBatches]       = useState<Array<{id:string; raw_text:string; processed_events:ExtractedEvent[]; created_at:string}>>([])
-  const [loadingWa, setLoadingWa]       = useState(false)
-  const waNumber = process.env.NEXT_PUBLIC_TWILIO_WHATSAPP_NUMBER || ''
-
   // Activity log (always visible at bottom)
-  type BatchItem = {id:string; raw_text:string; processed_events:ExtractedEvent[]|Record<string,unknown>; created_at:string}
+  type LogEvent = ExtractedEvent & { _event_id?: string; _deleted?: boolean }
+  type BatchItem = {id:string; raw_text:string; processed_events:LogEvent[]; created_at:string}
   const [activityLog, setActivityLog]   = useState<BatchItem[]>([])
   const [logExpanded, setLogExpanded]   = useState(false)
+  const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set())
+  const [editingLogEvent, setEditingLogEvent] = useState<{ batchId: string; evIdx: number; draft: LogEvent } | null>(null)
+  const [deletingEventId, setDeletingEventId] = useState<string | null>(null)
+  const [logSaving, setLogSaving] = useState(false)
 
   const loadActivityLog = () => {
     fetch('/api/recent-batches')
@@ -149,23 +131,6 @@ export default function InboxPage() {
   }
 
   useEffect(() => { loadActivityLog() }, [])
-
-  useEffect(() => {
-    if (inputTab === 'automail') {
-      setLoadingBatches(true)
-      fetch('/api/email-inbound')
-        .then(r => r.ok ? r.json() : [])
-        .then(d => setEmailBatches(d))
-        .finally(() => setLoadingBatches(false))
-    }
-    if (inputTab === 'whatsapp') {
-      setLoadingWa(true)
-      fetch('/api/whatsapp-inbound')
-        .then(r => r.ok ? r.json() : [])
-        .then(d => setWaBatches(d))
-        .finally(() => setLoadingWa(false))
-    }
-  }, [inputTab])
 
   async function handleProcess(text: string) {
     if (!text.trim()) return
@@ -203,7 +168,7 @@ export default function InboxPage() {
       } catch { errs.push(`"${ev.title}": שגיאת רשת`) }
     }
     setSaving(false)
-    if (saved>0) { setSuccessMsg(`✅ נשמרו ${saved} אירועים בלו"ז!`); setExtractedEvents(prev=>prev.filter(e=>!e.person||!e.date)); setRawText(''); setQuickCmd('') }
+    if (saved>0) { setSuccessMsg(`✅ נשמרו ${saved} אירועים בלו"ז!`); setExtractedEvents(prev=>prev.filter(e=>!e.person||!e.date)); setRawText('') }
     if (errs.length>0) setError('שגיאות: '+errs.join(' | '))
   }
 
@@ -214,323 +179,77 @@ export default function InboxPage() {
     setExtractedEvents(prev => prev.filter((_,i) => i!==idx))
   }
 
+  async function handleLogEventSave(batchId: string, ev: LogEvent) {
+    if (!ev._event_id) return
+    setLogSaving(true)
+    try {
+      await fetch(`/api/events?id=${ev._event_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: ev.title, person: ev.person, date: ev.date,
+          start_time: ev.start_time || null, end_time: ev.end_time || null,
+          location: ev.location || null, notes: ev.notes || null,
+          is_recurring: ev.is_recurring, recurrence_days: ev.recurrence_days || null,
+        }),
+      })
+      setActivityLog(prev => prev.map(b => b.id !== batchId ? b : {
+        ...b,
+        processed_events: b.processed_events.map(e =>
+          e._event_id === ev._event_id ? ev : e
+        ),
+      }))
+      setEditingLogEvent(null)
+    } finally { setLogSaving(false) }
+  }
+
+  async function handleLogEventDelete(batchId: string, eventId: string) {
+    setDeletingEventId(eventId)
+    try {
+      await fetch(`/api/events?id=${eventId}`, { method: 'DELETE' })
+      setActivityLog(prev => prev.map(b => b.id !== batchId ? b : {
+        ...b,
+        processed_events: b.processed_events.map(e =>
+          e._event_id === eventId ? { ...e, _deleted: true } as LogEvent : e
+        ),
+      }))
+    } finally { setDeletingEventId(null) }
+  }
+
   const complete = extractedEvents.filter(e => e.person && e.date && e.title)
   const incomplete = extractedEvents.filter(e => !e.person || !e.date)
-
-  const placeholders: Record<InputTab, string> = {
-    text: `דוגמה:\n"שלום הורים, חזרה לחג ביום רביעי 19.3 שעה 16:00 בבית הספר. יש להביא תלבושת לבנה ולא לשכוח את הספר 'שירים לחג'"`,
-    email: `הדבק כאן את תוכן המייל כפי שקיבלת אותו — כולל שורת הנושא, שם השולח, התאריך, וכל הפרטים. Claude יזהה אוטומטית את כל האירועים.`,
-    calendar: `הדבק כאן תוכן מיצוא Google Calendar (.ics):\n\nBEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:כדורגל — איתן\nDTSTART:20260320T160000\nDTEND:20260320T180000\nLOCATION:מגרש ספורט\nDESCRIPTION:אימון שבועי\nEND:VEVENT\nEND:VCALENDAR\n\nאו פשוט הדבק טקסט שהעתקת מ-Google Calendar.`,
-    quick: ``,
-    automail: ``,
-    whatsapp: ``,
-  }
-
-  const hints: Record<InputTab, { title: string; steps: string[] }> = {
-    email: {
-      title: '📧 איך להעביר מייל',
-      steps: [
-        'פתח את המייל שברצונך להוסיף ללוח',
-        'העתק את כל תוכן המייל (Ctrl+A, Ctrl+C)',
-        'הדבק כאן — Claude יזהה תאריכים, שעות ואת כל הפרטים',
-        'בדוק ותקן אם נדרש, לאחר מכן שמור',
-      ]
-    },
-    calendar: {
-      title: '📅 ייצוא מ-Google Calendar',
-      steps: [
-        'ב-Google Calendar: לחץ ⚙️ → הגדרות → ייצוא',
-        'הורד קובץ .ics, פתח אותו בעורך טקסט',
-        'העתק והדבק את התוכן כאן',
-        'לחלופין: פתח אירוע ב-Calendar, העתק את הטקסט מהחלון',
-      ]
-    },
-    text: { title: '', steps: [] },
-    quick: { title: '', steps: [] },
-    automail:  { title: '', steps: [] },
-    whatsapp:  { title: '', steps: [] },
-  }
 
   return (
     <div className="max-w-2xl mx-auto px-3 pb-12" dir="rtl">
       {/* Header */}
-      <div className="text-center mb-6 pt-2">
-        <h1 className="text-2xl font-black text-gray-900">📥 הכנסת מידע ללוח</h1>
-        <p className="text-sm text-gray-500 mt-1">הדבק כל סוג של טקסט — Claude יחלץ את האירועים</p>
+      <div className="mb-5 pt-2">
+        <h1 className="text-xl font-black text-gray-900">📥 הכנסת מידע ללוח</h1>
+        <p className="text-xs text-gray-400 mt-0.5">הדבק כל טקסט — הודעה, מייל, לוח חוגים — Claude יחלץ אירועים</p>
       </div>
 
       {/* Success / Error */}
       {successMsg && (
-        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-2xl text-green-800 text-sm text-right font-bold">{successMsg}</div>
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-2xl text-green-800 text-sm text-right font-bold">{successMsg}</div>
       )}
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm text-right">{error}</div>
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm text-right">{error}</div>
       )}
 
-      {/* Input source tabs */}
-      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 mb-5 overflow-hidden">
-        {/* Tab bar */}
-        <div className="flex border-b border-gray-100">
-          {INPUT_TABS.map(tab => (
-            <button key={tab.key} onClick={() => { setInputTab(tab.key); setError(''); setSuccessMsg('') }}
-              className={`flex-1 py-3 text-xs font-bold transition-all border-b-2 ${inputTab===tab.key ? 'border-amber-400 text-amber-600 bg-amber-50' : 'border-transparent text-gray-500 hover:bg-gray-50'}`}>
-              <div className="text-lg mb-0.5">{tab.icon}</div>
-              {tab.label}
+      {/* Input box */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 mb-4 p-4">
+        <textarea value={rawText} onChange={e => setRawText(e.target.value)}
+          className="w-full border-2 border-gray-200 rounded-xl p-3 text-sm h-36 resize-none focus:outline-none focus:border-amber-400 bg-gray-50"
+          placeholder={'הדבק כאן:\n• הודעת WhatsApp מבית ספר\n• מייל עם תאריכים\n• "אמי — שיעור שחייה יום ב׳ 14:00"\n• כל טקסט שמכיל מידע על אירוע'} dir="rtl" />
+        <div className="flex gap-2 mt-3">
+          <button onClick={() => handleProcess(rawText)} disabled={processing||!rawText.trim()}
+            className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-5 py-2.5 rounded-xl transition disabled:opacity-40 flex items-center gap-2 text-sm">
+            {processing ? <><span className="animate-spin">⏳</span> מנתח...</> : '🤖 חלץ אירועים'}
+          </button>
+          {rawText && (
+            <button onClick={() => { setRawText(''); setExtractedEvents([]); setError(''); setSuccessMsg('') }}
+              className="text-gray-400 hover:text-gray-600 text-sm px-3 py-2 rounded-xl border border-gray-200 hover:border-gray-300 transition">
+              נקה
             </button>
-          ))}
-        </div>
-
-        <div className="p-5">
-          {/* Hint box for email / calendar */}
-          {hints[inputTab]?.steps.length > 0 && (
-            <div className="mb-4 bg-blue-50 border border-blue-100 rounded-2xl p-4">
-              <div className="font-bold text-blue-700 text-sm mb-2">{hints[inputTab].title}</div>
-              <ol className="space-y-1">
-                {hints[inputTab].steps.map((s, i) => (
-                  <li key={i} className="text-xs text-blue-600 flex gap-2">
-                    <span className="font-black flex-shrink-0">{i+1}.</span><span>{s}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
-
-          {/* Quick command tab */}
-          {inputTab === 'quick' ? (
-            <div>
-              <div className="text-sm font-bold text-gray-700 mb-2">⚡ הוסף אירוע בפקודה מהירה</div>
-              <p className="text-xs text-gray-400 mb-3">כתוב בחופשיות — לדוגמה: "תוסיף לאמי יום ב׳ שעה 14:00 שיעור שחייה בבריכה" או "איתן יש אימון כדורגל כל חמישי 16:00"</p>
-              <div className="flex gap-2">
-                <button onClick={() => handleProcess(quickCmd)} disabled={processing||!quickCmd.trim()}
-                  className="flex-shrink-0 bg-amber-500 hover:bg-amber-600 text-white font-bold px-4 py-3 rounded-2xl transition disabled:opacity-40 flex items-center gap-2 text-sm">
-                  {processing ? <span className="animate-spin">⏳</span> : '🤖'} נתח
-                </button>
-                <input type="text" value={quickCmd} onChange={e => setQuickCmd(e.target.value)}
-                  onKeyDown={e => e.key==='Enter' && handleProcess(quickCmd)}
-                  placeholder='לדוגמה: "איתן — שיעור מתמטיקה יום ג׳ 16:00"'
-                  className="flex-1 border-2 border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-400 bg-gray-50" dir="rtl" />
-              </div>
-              {/* Quick examples */}
-              <div className="mt-3">
-                <div className="text-xs text-gray-400 mb-2">דוגמאות מהירות — לחץ להכניס:</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    'אמי — גן שעשועים מחר 10:00',
-                    'איתן כדורגל כל שני 16:00',
-                    'אלכס חוג גיטרה יום ג׳ 15:30',
-                    'אסף פגישה ראשון הבא 09:00 בזום',
-                  ].map(ex => (
-                    <button key={ex} onClick={() => setQuickCmd(ex)}
-                      className="text-xs bg-gray-100 hover:bg-amber-100 hover:text-amber-700 text-gray-600 px-2.5 py-1 rounded-full transition border border-gray-200">
-                      {ex}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : inputTab === 'automail' ? (
-            /* ── Auto-mail forwarding tab ── */
-            <div>
-              {/* Address box */}
-              <div className="mb-4 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50 p-4 text-right">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xl">📨</span>
-                  <span className="font-black text-emerald-800 text-sm">כתובת הפורוורד שלך</span>
-                </div>
-                {inboundAddress ? (
-                  <div className="flex items-center gap-2 flex-row-reverse">
-                    <code className="flex-1 bg-white rounded-xl px-3 py-2 text-sm font-mono text-emerald-700 border border-emerald-200 text-left" dir="ltr">{inboundAddress}</code>
-                    <button onClick={() => navigator.clipboard.writeText(inboundAddress)}
-                      className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-xl hover:bg-emerald-700 transition font-bold flex-shrink-0">
-                      העתק
-                    </button>
-                  </div>
-                ) : (
-                  <p className="text-xs text-emerald-700">הגדר <code className="bg-white px-1 rounded">NEXT_PUBLIC_POSTMARK_INBOUND_EMAIL</code> ב-Vercel לאחר הגדרת Postmark</p>
-                )}
-                <p className="text-xs text-emerald-600 mt-2">
-                  פשוט העבר כל מייל, הזמנה לפגישה, או אישור תור לכתובת הזו — אירועים יתווספו אוטומטית ללוח 🪄
-                </p>
-              </div>
-
-              {/* Setup steps */}
-              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-4">
-                <div className="font-black text-blue-700 text-sm mb-2">⚡ הגדרה ב-5 דקות (חד-פעמי)</div>
-                <ol className="space-y-1.5">
-                  {[
-                    <>הירשם בחינם ל-<a href="https://postmarkapp.com" target="_blank" rel="noopener noreferrer" className="underline font-bold">postmarkapp.com</a></>,
-                    'צור "Inbound Server" חדש',
-                    <>הגדר Webhook URL: <code className="bg-blue-100 px-1 rounded text-xs">https://allonys.com/api/email-inbound</code></>,
-                    'קבל כתובת אימייל בפורמט @inbound.postmarkapp.com (או הגדר דומיין משלך)',
-                    'הוסף את הכתובת ל-Vercel כ-NEXT_PUBLIC_POSTMARK_INBOUND_EMAIL',
-                    '✅ הכל מוכן — תעביר מיילים ואירועים יופיעו אוטומטית',
-                  ].map((s, i) => (
-                    <li key={i} className="text-xs text-blue-600 flex gap-2">
-                      <span className="font-black flex-shrink-0 text-blue-400">{i+1}.</span><span>{s}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-
-              {/* Recent imports */}
-              <div className="font-black text-gray-700 text-sm mb-2">📬 מיילים שעובדו לאחרונה</div>
-              {loadingBatches ? (
-                <div className="text-center py-6 text-gray-400 text-sm">⏳ טוען...</div>
-              ) : emailBatches.length === 0 ? (
-                <div className="text-center py-6 text-gray-300 text-sm">עדיין לא התקבלו מיילים אוטומטיים</div>
-              ) : (
-                <div className="space-y-2">
-                  {emailBatches.map(batch => {
-                    const subjectMatch = batch.raw_text.match(/subject: (.+)/i)
-                    const fromMatch    = batch.raw_text.match(/from: (.+)/i)
-                    const subject = subjectMatch?.[1]?.trim() || '(ללא נושא)'
-                    const from    = fromMatch?.[1]?.trim() || ''
-                    const evCount = batch.processed_events?.length ?? 0
-                    const dateStr = new Date(batch.created_at).toLocaleDateString('he-IL', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })
-                    return (
-                      <div key={batch.id} className="flex items-center gap-3 flex-row-reverse bg-white rounded-xl border border-gray-100 px-3 py-2.5 shadow-sm">
-                        <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-base flex-shrink-0">📧</div>
-                        <div className="flex-1 text-right min-w-0">
-                          <div className="font-bold text-sm text-gray-800 truncate">{subject}</div>
-                          {from && <div className="text-xs text-gray-400 truncate">{from}</div>}
-                        </div>
-                        <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
-                          <span className={`text-xs font-black px-2 py-0.5 rounded-full ${evCount > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-                            {evCount > 0 ? `✅ ${evCount} אירועים` : '—'}
-                          </span>
-                          <span className="text-[10px] text-gray-300">{dateStr}</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          ) : inputTab === 'whatsapp' ? (
-            /* ── WhatsApp forwarding tab ── */
-            <div>
-              {/* Number box */}
-              <div className="mb-4 rounded-2xl border-2 border-dashed border-green-300 bg-green-50 p-4 text-right">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xl">💬</span>
-                  <span className="font-black text-green-800 text-sm">מספר ה-WhatsApp של הלוח</span>
-                </div>
-                {waNumber ? (
-                  <div className="flex items-center gap-2 flex-row-reverse">
-                    <code className="flex-1 bg-white rounded-xl px-3 py-2 text-sm font-mono text-green-700 border border-green-200 text-left" dir="ltr">{waNumber}</code>
-                    <button onClick={() => navigator.clipboard.writeText(waNumber)}
-                      className="text-xs bg-green-600 text-white px-3 py-2 rounded-xl hover:bg-green-700 transition font-bold flex-shrink-0">
-                      העתק
-                    </button>
-                  </div>
-                ) : (
-                  <p className="text-xs text-green-700">הגדר <code className="bg-white px-1 rounded">NEXT_PUBLIC_TWILIO_WHATSAPP_NUMBER</code> ב-Vercel לאחר הגדרת Twilio</p>
-                )}
-                <p className="text-xs text-green-600 mt-2">
-                  העבר כל הודעת וואטסאפ — מבית ספר, קבוצת הורים, אישור תור — למספר הזה. אירועים יתווספו אוטומטית 🪄
-                </p>
-              </div>
-
-              {/* How it works */}
-              <div className="bg-green-50 border border-green-100 rounded-2xl p-4 mb-4">
-                <div className="font-black text-green-700 text-sm mb-2">🚀 איך זה עובד</div>
-                <div className="space-y-2 text-xs text-green-700">
-                  <div className="flex items-start gap-2">
-                    <span className="font-black text-green-400 flex-shrink-0">1.</span>
-                    <span>קיבלת הודעה בוואטסאפ עם מידע על אירוע? פשוט העבר (Forward) אותה למספר הזה</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="font-black text-green-400 flex-shrink-0">2.</span>
-                    <span>Claude ינתח את ההודעה ויחלץ: שם האירוע, תאריך, שעה, מיקום, מה להביא</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="font-black text-green-400 flex-shrink-0">3.</span>
-                    <span>האירוע נוסף ללוח <strong>אוטומטית</strong> — ללא צורך באישור</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="font-black text-green-400 flex-shrink-0">4.</span>
-                    <span>אם האירוע כבר קיים — הפרטים <strong>מתעדכנים</strong> אוטומטית עם המידע הכי עדכני</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="font-black text-green-400 flex-shrink-0">5.</span>
-                    <span>תקבל תשובה מיידית בוואטסאפ עם סיכום מה נוסף/עודכן</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Setup guide */}
-              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-4">
-                <div className="font-black text-blue-700 text-sm mb-2">⚙️ הגדרה חד-פעמית (10 דקות)</div>
-                <ol className="space-y-1.5">
-                  {[
-                    <>הירשם בחינם ל-<a href="https://twilio.com" target="_blank" rel="noopener noreferrer" className="underline font-bold">twilio.com</a> → קבל $15 קרדיט חינם</>,
-                    <>ב-Console: <strong>Messaging → Try it out → Send a WhatsApp message</strong> (Sandbox לבדיקה) <em>- או -</em> קנה מספר WhatsApp Business</>,
-                    <>ב-Phone Numbers → Manage → Active Numbers → לחץ על המספר → Messaging webhook:<br/><code className="bg-blue-100 px-1 rounded text-xs">https://allonys.com/api/whatsapp-inbound</code></>,
-                    'העתק את Account SID ו-Auth Token → הוסף לVercel: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN',
-                    <>הוסף לVercel: <code className="bg-blue-100 px-1 rounded">NEXT_PUBLIC_TWILIO_WHATSAPP_NUMBER</code> = מספר הוואטסאפ</>,
-                    '✅ שלח הודעת בדיקה ובדוק שהיא מופיעה כאן',
-                  ].map((s, i) => (
-                    <li key={i} className="text-xs text-blue-600 flex gap-2">
-                      <span className="font-black flex-shrink-0 text-blue-400">{i+1}.</span><span>{s}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-
-              {/* Recent messages */}
-              <div className="font-black text-gray-700 text-sm mb-2">📬 הודעות וואטסאפ שעובדו לאחרונה</div>
-              {loadingWa ? (
-                <div className="text-center py-6 text-gray-400 text-sm">⏳ טוען...</div>
-              ) : waBatches.length === 0 ? (
-                <div className="text-center py-6 text-gray-300 text-sm">עדיין לא התקבלו הודעות וואטסאפ</div>
-              ) : (
-                <div className="space-y-2">
-                  {waBatches.map(batch => {
-                    const fromMatch = batch.raw_text.match(/from: (whatsapp:\+[\d]+)/i)
-                    const from = fromMatch?.[1]?.replace('whatsapp:', '') || 'לא ידוע'
-                    // Extract preview: first line after the header
-                    const lines = batch.raw_text.split('\n').filter(Boolean)
-                    const preview = lines.slice(2).join(' ').slice(0, 80) || '(הודעה ריקה)'
-                    const evCount = batch.processed_events?.length ?? 0
-                    const dateStr = new Date(batch.created_at).toLocaleDateString('he-IL', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })
-                    return (
-                      <div key={batch.id} className="flex items-center gap-3 flex-row-reverse bg-white rounded-xl border border-gray-100 px-3 py-2.5 shadow-sm">
-                        <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-base flex-shrink-0">💬</div>
-                        <div className="flex-1 text-right min-w-0">
-                          <div className="font-bold text-sm text-gray-800 truncate">{preview}</div>
-                          <div className="text-xs text-gray-400 truncate">{from}</div>
-                        </div>
-                        <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
-                          <span className={`text-xs font-black px-2 py-0.5 rounded-full ${evCount > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                            {evCount > 0 ? `✅ ${evCount} אירועים` : '—'}
-                          </span>
-                          <span className="text-[10px] text-gray-300">{dateStr}</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          ) : (
-            /* Text / Email / Calendar — all go through same textarea */
-            <div>
-              <textarea value={rawText} onChange={e => setRawText(e.target.value)}
-                className="w-full border-2 border-gray-200 rounded-2xl p-4 text-sm h-40 resize-none focus:outline-none focus:border-amber-400 bg-gray-50"
-                placeholder={placeholders[inputTab]} dir="rtl" />
-              <div className="flex gap-2 mt-3">
-                <button onClick={() => handleProcess(rawText)} disabled={processing||!rawText.trim()}
-                  className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-5 py-2.5 rounded-2xl transition disabled:opacity-40 flex items-center gap-2 text-sm">
-                  {processing ? <><span className="animate-spin">⏳</span> מנתח...</> : '🤖 חלץ אירועים עם AI'}
-                </button>
-                {rawText && (
-                  <button onClick={() => { setRawText(''); setExtractedEvents([]); setError(''); setSuccessMsg('') }}
-                    className="text-gray-400 hover:text-gray-600 text-sm px-3 py-2 rounded-2xl border-2 border-gray-200 hover:border-gray-300 transition">
-                    נקה
-                  </button>
-                )}
-              </div>
-            </div>
           )}
         </div>
       </div>
@@ -577,45 +296,167 @@ export default function InboxPage() {
           </span>
           <span className="font-black text-gray-700 text-sm">📋 פעילות אחרונה</span>
         </button>
+
         {logExpanded && (
-          <div className="border-t border-gray-50 px-4 pb-4">
+          <div className="border-t border-gray-100 px-4 pb-4">
             {activityLog.length === 0 ? (
               <div className="text-center py-4 text-gray-300 text-sm">אין פעילות עדיין</div>
             ) : (
-              <div className="space-y-2 mt-3">
+              <div className="space-y-3 mt-3">
                 {activityLog.map(batch => {
                   const isWA    = batch.raw_text.startsWith('[WHATSAPP')
                   const isEmail = batch.raw_text.startsWith('[EMAIL')
                   const icon    = isWA ? '💬' : isEmail ? '📧' : '✏️'
                   const source  = isWA ? 'WhatsApp' : isEmail ? 'מייל' : 'ידני'
-                  // Extract a readable preview from raw_text
                   const lines   = batch.raw_text.split('\n').filter(Boolean)
-                  const preview = lines.slice(isWA || isEmail ? 2 : 0).join(' ').slice(0, 70) || lines[0] || ''
-                  const events  = Array.isArray(batch.processed_events) ? batch.processed_events as ExtractedEvent[] : []
-                  const evCount = events.length
+                  // Strip header line for preview
+                  const msgLines = lines.slice(isWA || isEmail ? 1 : 0)
+                  const preview = msgLines.slice(0, 2).join(' ').slice(0, 90) || '(ללא תוכן)'
+                  const fullMsg = (isWA || isEmail) ? lines.slice(1).join('\n').trim() : batch.raw_text
+                  const events  = Array.isArray(batch.processed_events) ? batch.processed_events as LogEvent[] : []
+                  const activeEvents = events.filter(e => !e._deleted)
                   const dateStr = new Date(batch.created_at).toLocaleDateString('he-IL', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })
+                  const isOpen  = expandedBatches.has(batch.id)
+
                   return (
-                    <div key={batch.id} className="flex items-start gap-3 flex-row-reverse bg-gray-50 rounded-xl px-3 py-2.5">
-                      <div className="w-7 h-7 rounded-full bg-white border border-gray-100 flex items-center justify-center text-sm flex-shrink-0 mt-0.5">{icon}</div>
-                      <div className="flex-1 text-right min-w-0">
-                        <div className="text-xs text-gray-700 truncate leading-snug">{preview || '(ללא תוכן)'}</div>
-                        {evCount > 0 && (
-                          <div className="flex flex-wrap gap-1 justify-end mt-1">
-                            {events.slice(0, 3).map((ev, i) => (
-                              <span key={i} className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-full font-medium truncate max-w-[120px]">
-                                {ev.title}
+                    <div key={batch.id} className="border border-gray-100 rounded-2xl overflow-hidden">
+                      {/* Batch header */}
+                      <button
+                        className="w-full flex items-start gap-3 flex-row-reverse px-3 py-2.5 hover:bg-gray-50 transition text-right"
+                        onClick={() => setExpandedBatches(prev => {
+                          const next = new Set(prev)
+                          next.has(batch.id) ? next.delete(batch.id) : next.add(batch.id)
+                          return next
+                        })}
+                      >
+                        <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-sm flex-shrink-0 mt-0.5">{icon}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs text-gray-700 leading-snug line-clamp-2 text-right">{preview}</div>
+                          <div className="flex items-center gap-2 justify-end mt-1 flex-wrap">
+                            {activeEvents.length > 0 && (
+                              <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">
+                                {activeEvents.length} אירועים
                               </span>
-                            ))}
-                            {evCount > 3 && <span className="text-[10px] text-gray-400">+{evCount - 3}</span>}
+                            )}
+                            <span className="text-[10px] text-gray-400">{source} · {dateStr}</span>
+                            <span className="text-[10px] text-gray-300">{isOpen ? '▲' : '▼'}</span>
                           </div>
-                        )}
-                      </div>
-                      <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${evCount > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-                          {evCount > 0 ? `${evCount} אירועים` : source}
-                        </span>
-                        <span className="text-[10px] text-gray-300">{dateStr}</span>
-                      </div>
+                        </div>
+                      </button>
+
+                      {/* Expanded content */}
+                      {isOpen && (
+                        <div className="border-t border-gray-100 bg-gray-50">
+                          {/* Full message */}
+                          <div className="px-3 pt-3 pb-2">
+                            <div className="text-[10px] font-bold text-gray-400 mb-1 text-right">ההודעה המקורית</div>
+                            <div className="bg-white rounded-xl border border-gray-100 px-3 py-2 text-xs text-gray-600 whitespace-pre-wrap max-h-32 overflow-y-auto text-right leading-relaxed">
+                              {fullMsg}
+                            </div>
+                          </div>
+
+                          {/* Events list */}
+                          {events.length > 0 ? (
+                            <div className="px-3 pb-3 space-y-2">
+                              <div className="text-[10px] font-bold text-gray-400 text-right">אירועים שנוצרו/עודכנו</div>
+                              {events.map((ev, evIdx) => {
+                                const isEditingThis = editingLogEvent?.batchId === batch.id && editingLogEvent.evIdx === evIdx
+                                const draft = isEditingThis ? editingLogEvent.draft : ev
+
+                                if (ev._deleted) return (
+                                  <div key={evIdx} className="flex items-center justify-end gap-2 px-3 py-2 rounded-xl bg-red-50 border border-red-100">
+                                    <span className="text-xs text-red-400 line-through">{ev.title}</span>
+                                    <span className="text-[10px] text-red-300">נמחק</span>
+                                  </div>
+                                )
+
+                                return (
+                                  <div key={evIdx} className={`rounded-xl border px-3 py-2.5 ${isEditingThis ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-100'}`}>
+                                    {isEditingThis ? (
+                                      /* ── Inline edit form ── */
+                                      <div className="space-y-2">
+                                        <div className="flex gap-2 flex-row-reverse flex-wrap">
+                                          <div className="flex flex-col gap-1 min-w-[90px]">
+                                            <label className="text-[10px] text-gray-400 text-right">שם</label>
+                                            <input value={draft.title} onChange={e => setEditingLogEvent(p => p && ({ ...p, draft: { ...p.draft, title: e.target.value } }))}
+                                              className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400" dir="rtl" />
+                                          </div>
+                                          <div className="flex flex-col gap-1 min-w-[80px]">
+                                            <label className="text-[10px] text-gray-400 text-right">מי</label>
+                                            <select value={draft.person} onChange={e => setEditingLogEvent(p => p && ({ ...p, draft: { ...p.draft, person: e.target.value } }))}
+                                              className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400" dir="rtl">
+                                              {PERSON_OPTIONS.map(p => <option key={p} value={p}>{PERSON_LABELS[p]}</option>)}
+                                            </select>
+                                          </div>
+                                          <div className="flex flex-col gap-1">
+                                            <label className="text-[10px] text-gray-400 text-right">תאריך</label>
+                                            <input type="date" value={draft.date} onChange={e => setEditingLogEvent(p => p && ({ ...p, draft: { ...p.draft, date: e.target.value } }))}
+                                              className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400" />
+                                          </div>
+                                          <div className="flex flex-col gap-1">
+                                            <label className="text-[10px] text-gray-400 text-right">שעה</label>
+                                            <input type="time" value={draft.start_time || ''} onChange={e => setEditingLogEvent(p => p && ({ ...p, draft: { ...p.draft, start_time: e.target.value } }))}
+                                              className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400" />
+                                          </div>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-[10px] text-gray-400 text-right">מיקום</label>
+                                          <input value={draft.location || ''} onChange={e => setEditingLogEvent(p => p && ({ ...p, draft: { ...p.draft, location: e.target.value } }))}
+                                            className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400 w-full" dir="rtl" />
+                                        </div>
+                                        <div className="flex gap-2 justify-end mt-1">
+                                          <button onClick={() => setEditingLogEvent(null)}
+                                            className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg border border-gray-200">ביטול</button>
+                                          {draft._event_id && (
+                                            <button onClick={() => handleLogEventSave(batch.id, draft)} disabled={logSaving}
+                                              className="text-xs bg-amber-500 hover:bg-amber-600 text-white font-bold px-3 py-1 rounded-lg transition disabled:opacity-40">
+                                              {logSaving ? '...' : '💾 שמור'}
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      /* ── Event display row ── */
+                                      <div className="flex items-start gap-2 flex-row-reverse">
+                                        <div className="flex-1 text-right min-w-0">
+                                          <div className="flex items-center gap-1.5 justify-end flex-wrap">
+                                            <span className="font-bold text-xs text-gray-800">{ev.title}</span>
+                                            {ev.person && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${PERSON_COLORS[ev.person] || 'bg-gray-100 text-gray-600'}`}>{PERSON_LABELS[ev.person] || ev.person}</span>}
+                                          </div>
+                                          <div className="flex items-center gap-2 justify-end mt-0.5 flex-wrap">
+                                            {ev.date && <span className="text-[10px] text-gray-400">📅 {formatDate(ev.date)}</span>}
+                                            {ev.start_time && <span className="text-[10px] text-gray-400">⏰ {ev.start_time}{ev.end_time ? `–${ev.end_time}` : ''}</span>}
+                                            {ev.location && <span className="text-[10px] text-gray-400">📍 {ev.location}</span>}
+                                          </div>
+                                          {ev.notes && <div className="text-[10px] text-amber-700 mt-0.5 text-right">📝 {ev.notes.slice(0, 60)}</div>}
+                                        </div>
+                                        {/* Action buttons */}
+                                        <div className="flex gap-1 flex-shrink-0 mt-0.5">
+                                          <button
+                                            onClick={() => setEditingLogEvent({ batchId: batch.id, evIdx, draft: { ...ev } })}
+                                            className="text-[10px] bg-gray-100 hover:bg-amber-100 hover:text-amber-700 text-gray-500 px-2 py-1 rounded-lg transition font-bold"
+                                            title="ערוך"
+                                          >✏️</button>
+                                          {ev._event_id && (
+                                            <button
+                                              onClick={() => handleLogEventDelete(batch.id, ev._event_id!)}
+                                              disabled={deletingEventId === ev._event_id}
+                                              className="text-[10px] bg-gray-100 hover:bg-red-100 hover:text-red-600 text-gray-500 px-2 py-1 rounded-lg transition font-bold disabled:opacity-40"
+                                              title="מחק"
+                                            >{deletingEventId === ev._event_id ? '...' : '🗑️'}</button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <div className="px-3 pb-3 text-center text-[10px] text-gray-300">לא נוצרו אירועים מהודעה זו</div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -625,30 +466,6 @@ export default function InboxPage() {
         )}
       </div>
 
-      {/* Tips */}
-      {extractedEvents.length === 0 && !processing && (
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
-          <div className="font-black text-gray-700 text-sm mb-3 text-right">💡 מה אפשר להכניס?</div>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { icon: '💬', title: 'הודעות WhatsApp', desc: 'העתק/הדבק ישירות מהשיחה' },
-              { icon: '📧', title: 'מיילים מבית הספר', desc: 'הדבק את תוכן המייל המלא' },
-              { icon: '📅', title: 'Google Calendar', desc: 'יצא .ics או העתק טקסט' },
-              { icon: '📄', title: 'עלון בית ספר', desc: 'צלם, העבר OCR, הדבק' },
-              { icon: '🗓️', title: 'לוח חוגים', desc: 'כל פורמט טקסט עובד' },
-              { icon: '⚡', title: 'פקודה מהירה', desc: 'הוסף ידנית בשפה חופשית' },
-            ].map(tip => (
-              <div key={tip.title} className="flex items-start gap-2.5 p-3 rounded-2xl bg-gray-50 border border-gray-100">
-                <span className="text-xl flex-shrink-0">{tip.icon}</span>
-                <div>
-                  <div className="text-xs font-bold text-gray-700">{tip.title}</div>
-                  <div className="text-xs text-gray-400">{tip.desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
