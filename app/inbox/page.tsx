@@ -136,6 +136,20 @@ export default function InboxPage() {
   const [loadingWa, setLoadingWa]       = useState(false)
   const waNumber = process.env.NEXT_PUBLIC_TWILIO_WHATSAPP_NUMBER || ''
 
+  // Activity log (always visible at bottom)
+  type BatchItem = {id:string; raw_text:string; processed_events:ExtractedEvent[]|Record<string,unknown>; created_at:string}
+  const [activityLog, setActivityLog]   = useState<BatchItem[]>([])
+  const [logExpanded, setLogExpanded]   = useState(false)
+
+  const loadActivityLog = () => {
+    fetch('/api/recent-batches')
+      .then(r => r.ok ? r.json() : [])
+      .then(d => setActivityLog(d))
+      .catch(() => {})
+  }
+
+  useEffect(() => { loadActivityLog() }, [])
+
   useEffect(() => {
     if (inputTab === 'automail') {
       setLoadingBatches(true)
@@ -550,6 +564,66 @@ export default function InboxPage() {
           )}
         </div>
       )}
+
+      {/* ── Activity Log ── */}
+      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 mb-5">
+        <button
+          onClick={() => { setLogExpanded(x => !x); if (!logExpanded) loadActivityLog() }}
+          className="w-full flex items-center justify-between px-5 py-3.5 text-right"
+        >
+          <span className="text-xs font-bold text-gray-400 flex items-center gap-1.5">
+            {logExpanded ? '▲' : '▼'}
+            {activityLog.length > 0 ? `${activityLog.length} פריטים` : ''}
+          </span>
+          <span className="font-black text-gray-700 text-sm">📋 פעילות אחרונה</span>
+        </button>
+        {logExpanded && (
+          <div className="border-t border-gray-50 px-4 pb-4">
+            {activityLog.length === 0 ? (
+              <div className="text-center py-4 text-gray-300 text-sm">אין פעילות עדיין</div>
+            ) : (
+              <div className="space-y-2 mt-3">
+                {activityLog.map(batch => {
+                  const isWA    = batch.raw_text.startsWith('[WHATSAPP')
+                  const isEmail = batch.raw_text.startsWith('[EMAIL')
+                  const icon    = isWA ? '💬' : isEmail ? '📧' : '✏️'
+                  const source  = isWA ? 'WhatsApp' : isEmail ? 'מייל' : 'ידני'
+                  // Extract a readable preview from raw_text
+                  const lines   = batch.raw_text.split('\n').filter(Boolean)
+                  const preview = lines.slice(isWA || isEmail ? 2 : 0).join(' ').slice(0, 70) || lines[0] || ''
+                  const events  = Array.isArray(batch.processed_events) ? batch.processed_events as ExtractedEvent[] : []
+                  const evCount = events.length
+                  const dateStr = new Date(batch.created_at).toLocaleDateString('he-IL', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })
+                  return (
+                    <div key={batch.id} className="flex items-start gap-3 flex-row-reverse bg-gray-50 rounded-xl px-3 py-2.5">
+                      <div className="w-7 h-7 rounded-full bg-white border border-gray-100 flex items-center justify-center text-sm flex-shrink-0 mt-0.5">{icon}</div>
+                      <div className="flex-1 text-right min-w-0">
+                        <div className="text-xs text-gray-700 truncate leading-snug">{preview || '(ללא תוכן)'}</div>
+                        {evCount > 0 && (
+                          <div className="flex flex-wrap gap-1 justify-end mt-1">
+                            {events.slice(0, 3).map((ev, i) => (
+                              <span key={i} className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-full font-medium truncate max-w-[120px]">
+                                {ev.title}
+                              </span>
+                            ))}
+                            {evCount > 3 && <span className="text-[10px] text-gray-400">+{evCount - 3}</span>}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${evCount > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {evCount > 0 ? `${evCount} אירועים` : source}
+                        </span>
+                        <span className="text-[10px] text-gray-300">{dateStr}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Tips */}
       {extractedEvents.length === 0 && !processing && (
