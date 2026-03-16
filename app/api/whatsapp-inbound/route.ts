@@ -371,8 +371,9 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // ── Fetch schedule context ────────────────────────────────────────────────
-  const schedule = await fetchUpcomingSchedule()
+  // ── Fetch schedule only for likely queries (saves ~200ms otherwise) ────────
+  const looksLikeQuery = /מה|מתי|יש לי|האם|מתוכנן|השבוע|היום|מחר|כמה|פגישה/i.test(messageBody)
+  const schedule = looksLikeQuery ? await fetchUpcomingSchedule() : ''
 
   // ── Call Claude with unified prompt ───────────────────────────────────────
   type ClaudeResult =
@@ -407,7 +408,7 @@ export async function POST(request: NextRequest) {
     })
 
     const msg = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
+      model: 'claude-haiku-4-5',
       max_tokens: 2048,
       system: SYSTEM_PROMPT(today, schedule),
       messages: [{ role: 'user', content }],
