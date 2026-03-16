@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-const PUBLIC_PATHS = ['/login', '/api/auth']
+const PUBLIC_PATHS = [
+  '/login',
+  '/api/auth',
+  '/api/whatsapp-inbound',  // Twilio webhook — no session cookie
+  '/api/email-inbound',     // Postmark webhook — no session cookie
+]
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
