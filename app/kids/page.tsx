@@ -27,7 +27,7 @@ interface KidTheme {
 }
 
 interface EventForm {
-  title: string; person: string; date: string
+  title: string; persons: string[]; date: string
   start_time: string; end_time: string
   location: string; notes: string
   is_recurring: boolean; recurrence_days: string[]
@@ -274,6 +274,11 @@ function EventModal({ form, editing, onClose, onSave, onChange }: {
       ? form.recurrence_days.filter(d => d !== day)
       : [...form.recurrence_days, day]
   })
+  const togglePerson = (key: string) => onChange({
+    persons: form.persons.includes(key)
+      ? form.persons.filter(p => p !== key)
+      : [...form.persons, key]
+  })
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
@@ -283,11 +288,30 @@ function EventModal({ form, editing, onClose, onSave, onChange }: {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
         </div>
         <div className="px-6 py-4 space-y-4">
-          <div><label className={lbl}>👤 עבור מי</label>
-            <select value={form.person} onChange={e => onChange({ person: e.target.value })} className={cls}>
-              <option value="">— בחר —</option>
-              {ALL_PEOPLE.map(p => <option key={p.key} value={p.key}>{p.name}</option>)}
-            </select></div>
+
+          {/* Multi-person selector */}
+          <div>
+            <label className={lbl}>👥 עבור מי <span className="text-gray-300 font-normal">(ניתן לבחור מספר אנשים)</span></label>
+            <div className="flex flex-wrap gap-2 flex-row-reverse">
+              {ALL_PEOPLE.map(p => {
+                const selected = form.persons.includes(p.key)
+                return (
+                  <button key={p.key} type="button" onClick={() => togglePerson(p.key)}
+                    className={`px-3 py-2 rounded-xl text-sm font-bold transition-all border-2 ${
+                      selected
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm scale-[1.02]'
+                        : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300 hover:text-blue-600'
+                    }`}>
+                    {p.name}
+                  </button>
+                )
+              })}
+            </div>
+            {form.persons.length > 1 && (
+              <p className="text-xs text-blue-500 mt-1.5 text-right">✨ ייווצרו {form.persons.length} אירועים נפרדים</p>
+            )}
+          </div>
+
           <div><label className={lbl}>📝 כותרת *</label>
             <input type="text" value={form.title} onChange={e => onChange({ title: e.target.value })} placeholder="שם האירוע..." className={cls} /></div>
           <div><label className={lbl}>📅 תאריך</label>
@@ -325,9 +349,9 @@ function EventModal({ form, editing, onClose, onSave, onChange }: {
           </div>
         </div>
         <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-row-reverse">
-          <button onClick={onSave} disabled={!form.title.trim() || !form.person}
+          <button onClick={onSave} disabled={!form.title.trim() || !form.persons.length}
             className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-black py-2.5 rounded-2xl transition shadow-md text-sm">
-            {editing ? '💾 שמור שינויים' : '✅ הוסף אירוע'}
+            {editing ? '💾 שמור שינויים' : form.persons.length > 1 ? `✅ הוסף ${form.persons.length} אירועים` : '✅ הוסף אירוע'}
           </button>
           <button onClick={onClose} className="px-5 py-2.5 rounded-2xl border-2 border-gray-200 text-gray-600 font-bold text-sm hover:bg-gray-50 transition">ביטול</button>
         </div>
@@ -510,7 +534,7 @@ export default function KidsSchedulePage() {
   const [editingEvent, setEditingEvent] = useState<Event|null>(null)
   const [savingEvent, setSavingEvent] = useState(false)
   const emptyForm = useCallback((person = ''): EventForm => ({
-    title:'', person, date: format(selectedDate,'yyyy-MM-dd'),
+    title:'', persons: person ? [person] : [], date: format(selectedDate,'yyyy-MM-dd'),
     start_time:'', end_time:'', location:'', notes:'',
     is_recurring: false, recurrence_days: [], meeting_link:''
   }), [selectedDate])
@@ -608,7 +632,7 @@ export default function KidsSchedulePage() {
   function openEditEvent(event: Event) {
     setEditingEvent(event)
     setEventForm({
-      title: event.title, person: event.person, date: event.date,
+      title: event.title, persons: [event.person], date: event.date,
       start_time: event.start_time||'', end_time: event.end_time||'',
       location: event.location||'', notes: event.notes||'',
       is_recurring: event.is_recurring, recurrence_days: event.recurrence_days||[],
@@ -617,21 +641,30 @@ export default function KidsSchedulePage() {
     setShowModal(true)
   }
   async function saveEvent() {
-    if (!eventForm.title.trim() || !eventForm.person) return
+    if (!eventForm.title.trim() || !eventForm.persons.length) return
     setSavingEvent(true)
     try {
-      const payload = { ...eventForm,
+      const basePayload = {
+        title: eventForm.title, date: eventForm.date,
         start_time: eventForm.start_time||null, end_time: eventForm.end_time||null,
         location: eventForm.location||null, notes: eventForm.notes||null,
         meeting_link: eventForm.meeting_link||null,
+        is_recurring: eventForm.is_recurring,
         recurrence_days: eventForm.is_recurring ? eventForm.recurrence_days : null,
       }
       if (editingEvent) {
+        // Edit: update with first selected person
+        const payload = { ...basePayload, person: eventForm.persons[0] || editingEvent.person }
         const res = await fetch(`/api/events?id=${editingEvent.id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
         if (res.ok) { const updated = await res.json(); setEvents(prev => prev.map(e => e.id===editingEvent.id ? {...e,...updated} : e)) }
       } else {
-        const res = await fetch('/api/events', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
-        if (res.ok) { const created = await res.json(); if (!created.duplicate) setEvents(prev => [...prev, created]) }
+        // New: create one event per selected person
+        const created: Event[] = []
+        for (const person of eventForm.persons) {
+          const res = await fetch('/api/events', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ ...basePayload, person }) })
+          if (res.ok) { const c = await res.json(); if (!c.duplicate) created.push(c) }
+        }
+        setEvents(prev => [...prev, ...created])
       }
       setShowModal(false)
     } finally { setSavingEvent(false) }
@@ -832,71 +865,84 @@ export default function KidsSchedulePage() {
         <div className="mb-5 no-print rounded-3xl overflow-hidden shadow-2xl"
           style={{ background: 'linear-gradient(135deg,#0a0f1e 0%,#0f2744 40%,#1a3a6e 70%,#0f2744 100%)' }}>
 
-          {/* Top strip: actions + date nav */}
-          <div className="px-4 pt-3 pb-0 flex items-center justify-between gap-2 flex-row-reverse">
+          {/* Top strip: family name + actions */}
+          <div className="px-4 pt-4 pb-2 flex items-center justify-between gap-2 flex-row-reverse">
 
             {/* Right: family name + live dot */}
-            <div className="flex items-center gap-2 flex-row-reverse">
-              <span className="text-base leading-none">🏠</span>
-              <h1 className="text-sm font-black text-white tracking-tight leading-none">משפחת אלוני</h1>
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <div className="flex items-center gap-2 flex-row-reverse shrink-0">
+              <span className="text-lg leading-none">🏠</span>
+              <h1 className="text-base font-black text-white tracking-tight leading-none">משפחת אלוני</h1>
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             </div>
 
-            {/* Left: action buttons */}
-            <div className="flex items-center gap-1.5">
+            {/* Left: action buttons — bigger touch targets */}
+            <div className="flex items-center gap-2">
+              {/* Primary: Add via inbox */}
               <a href="/inbox"
-                className="flex items-center gap-1 bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition whitespace-nowrap">
-                ✚ הכנס
+                className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition whitespace-nowrap shadow-lg shadow-emerald-500/30">
+                ✚ <span className="hidden xs:inline">הכנס</span>
               </a>
-              <button onClick={() => openAddEvent(activeTab !== 'kids' && activeTab !== 'family' && activeTab !== 'stats' && activeTab !== 'week' ? activeTab : '')}
-                className="bg-blue-500/80 hover:bg-blue-400/80 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition whitespace-nowrap">
-                ➕ אירוע
+              {/* Add event directly */}
+              <button
+                onClick={() => openAddEvent(activeTab !== 'kids' && activeTab !== 'family' && activeTab !== 'stats' && activeTab !== 'week' ? activeTab : '')}
+                className="flex items-center gap-1 bg-blue-500/80 hover:bg-blue-400/80 active:bg-blue-600/80 text-white text-sm font-bold px-3 py-2.5 rounded-xl transition whitespace-nowrap"
+                title="הוסף אירוע">
+                ➕
               </button>
+              {/* AI video */}
               <button
                 onClick={() => setShowVideoModal(true)}
-                title="צור סיכום וידאו שבועי"
-                className="bg-purple-500/80 hover:bg-purple-400/80 text-white text-xs font-bold px-2.5 py-1.5 rounded-xl transition whitespace-nowrap"
-              >
+                className="bg-purple-500/80 hover:bg-purple-400/80 active:bg-purple-600/80 text-white text-sm font-bold px-3 py-2.5 rounded-xl transition"
+                title="סיכום וידאו AI">
                 🎬
               </button>
+              {/* Print */}
               <button onClick={() => window.print()}
-                className="bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs font-bold px-2.5 py-1.5 rounded-xl transition">
+                className="bg-white/10 hover:bg-white/20 active:bg-white/30 text-white/70 hover:text-white text-sm px-3 py-2.5 rounded-xl transition hidden sm:flex"
+                title="הדפס">
                 🖨️
               </button>
+              {/* Logout */}
               <button onClick={async () => { await fetch('/api/auth', { method: 'DELETE' }); window.location.href = '/login' }}
-                className="bg-white/10 hover:bg-white/20 text-white/50 hover:text-white/80 text-xs px-2.5 py-1.5 rounded-xl transition">
+                className="bg-white/10 hover:bg-white/20 text-white/50 hover:text-white/80 text-xs px-2.5 py-2.5 rounded-xl transition">
                 יציאה
               </button>
             </div>
           </div>
 
-          {/* Clock + date nav + weather row */}
-          <div className="px-4 pt-2 pb-3 flex items-center justify-between gap-3">
-
-            {/* Date nav */}
-            <div className="flex items-center gap-1 flex-shrink-0">
-              <button onClick={() => setSelectedDate(d => addDays(d, 1))} className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white font-bold text-base">›</button>
-              <button onClick={() => setSelectedDate(new Date())}
-                className="text-[10px] font-bold bg-amber-500/80 hover:bg-amber-400/80 text-white px-2 py-1 rounded-lg transition whitespace-nowrap">
-                היום
-              </button>
-              <button onClick={() => setSelectedDate(addDays(new Date(), 1))}
-                className="text-[10px] font-bold bg-sky-500/80 hover:bg-sky-400/80 text-white px-2 py-1 rounded-lg transition whitespace-nowrap">
-                מחר
-              </button>
-              <input type="date" value={dateStr} onChange={e => setSelectedDate(new Date(e.target.value + 'T12:00:00'))}
-                className="bg-white/10 border border-white/20 text-white text-[10px] rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-white/40 w-[105px]" />
-              <button onClick={() => setSelectedDate(d => subDays(d, 1))} className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white font-bold text-base">‹</button>
-            </div>
-
-            {/* Clock — center */}
+          {/* Clock + weather row */}
+          <div className="px-4 pt-1 pb-2 flex items-center justify-between gap-3">
             <div className="flex-1 flex justify-center">
               <LiveClock />
             </div>
-
-            {/* Weather */}
             <div className="flex-shrink-0">
               <WeatherWidget />
+            </div>
+          </div>
+
+          {/* Date nav row — generous touch targets for mobile */}
+          <div className="px-3 pb-3">
+            {/* Current date label */}
+            <div className="text-center mb-2">
+              <span className="text-white/80 text-sm font-bold tracking-wide">
+                {dateLabel}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 justify-center">
+              <button onClick={() => setSelectedDate(d => subDays(d, 1))}
+                className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/30 flex items-center justify-center text-white font-bold text-lg transition">‹</button>
+              <button onClick={() => setSelectedDate(new Date())}
+                className="flex-1 h-10 font-bold bg-amber-500/80 hover:bg-amber-400/80 active:bg-amber-600/80 text-white text-sm rounded-xl transition whitespace-nowrap max-w-[72px]">
+                היום
+              </button>
+              <button onClick={() => setSelectedDate(addDays(new Date(), 1))}
+                className="flex-1 h-10 font-bold bg-sky-500/70 hover:bg-sky-400/70 active:bg-sky-600/70 text-white text-sm rounded-xl transition whitespace-nowrap max-w-[72px]">
+                מחר
+              </button>
+              <input type="date" value={dateStr} onChange={e => setSelectedDate(new Date(e.target.value + 'T12:00:00'))}
+                className="bg-white/10 border border-white/20 text-white text-xs rounded-xl px-2 h-10 focus:outline-none focus:ring-2 focus:ring-white/40 w-[110px]" />
+              <button onClick={() => setSelectedDate(d => addDays(d, 1))}
+                className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/30 flex items-center justify-center text-white font-bold text-lg transition">›</button>
             </div>
           </div>
 
