@@ -160,10 +160,17 @@ function LiveClock() {
     const t = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(t)
   }, [])
+  const hhmm = format(now, 'HH:mm')
+  const ss   = format(now, 'ss')
   return (
-    <span dir="ltr" className="font-mono font-black text-gray-700 text-xl tabular-nums">
-      {format(now, 'HH:mm:ss')}
-    </span>
+    <div dir="ltr" className="flex items-end gap-0.5 leading-none tabular-nums select-none">
+      <span className="font-black text-white tracking-tight" style={{ fontSize: '2.6rem', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+        {hhmm}
+      </span>
+      <span className="font-bold text-white/40 mb-1" style={{ fontSize: '1.1rem', fontVariantNumeric: 'tabular-nums' }}>
+        :{ss}
+      </span>
+    </div>
   )
 }
 
@@ -831,38 +838,49 @@ export default function KidsSchedulePage() {
         </div>
 
         {/* ── Hero header ──────────────────────────────────────────────── */}
-        <div className="mb-5 no-print rounded-3xl overflow-hidden shadow-xl"
-          style={{ background: 'linear-gradient(135deg,#0f172a 0%,#1e3a5f 50%,#0f2744 100%)' }}>
-          <div className="px-6 pt-5 pb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="mb-5 no-print rounded-3xl overflow-hidden shadow-2xl"
+          style={{ background: 'linear-gradient(135deg,#0a0f1e 0%,#0f2744 40%,#1a3a6e 70%,#0f2744 100%)' }}>
 
-            {/* Left: title + date + clock */}
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-2xl">🏠</span>
-                <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">משפחת אלוני</h1>
+          {/* Top band: title + clock + weather */}
+          <div className="px-5 pt-5 pb-4 flex items-center justify-between gap-4">
+
+            {/* Right: family name + date (RTL — visually left in LTR container) */}
+            <div className="flex-shrink-0 text-right">
+              <div className="flex items-center gap-2 justify-end mb-0.5">
+                <h1 className="text-lg font-black text-white tracking-tight leading-none">משפחת אלוני</h1>
+                <span className="text-xl leading-none">🏠</span>
               </div>
-              <div className="text-blue-200 text-sm font-medium">{dateLabel}</div>
-              <div className="mt-2 flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <LiveClock />
+              <div className="text-sky-300/80 text-xs font-semibold tracking-wide">{dateLabel}</div>
+              {/* Live indicator */}
+              <div className="flex items-center gap-1.5 justify-end mt-1.5">
+                <span className="text-[10px] text-emerald-400/70 font-semibold tracking-widest uppercase">Live</span>
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               </div>
             </div>
 
-            {/* Right: weather inline */}
-            <div className="w-full sm:w-auto">
+            {/* Center: big clock */}
+            <div className="flex-1 flex justify-center">
+              <LiveClock />
+            </div>
+
+            {/* Left: weather */}
+            <div className="flex-shrink-0">
               <WeatherWidget />
             </div>
 
           </div>
 
-          {/* ── Tab bar built into the hero ── */}
-          <div className="px-4 pb-3 flex gap-1.5 overflow-x-auto">
+          {/* Thin separator */}
+          <div className="mx-5 h-px bg-white/10" />
+
+          {/* ── Tab bar ── */}
+          <div className="px-4 py-2.5 flex gap-1.5 overflow-x-auto">
             {TABS.map(tab => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key)}
                 className={`px-3.5 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all flex-shrink-0
                   ${activeTab === tab.key
                     ? 'bg-white text-gray-900 shadow-md'
-                    : 'text-white/60 hover:text-white hover:bg-white/10'
+                    : 'text-white/50 hover:text-white/90 hover:bg-white/10'
                   }`}>
                 {tab.label}
               </button>

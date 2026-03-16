@@ -106,16 +106,39 @@ function titlesAreSimilar(a: string, b: string): boolean {
   return overlap / Math.max(wordsA.length, wordsB.length) >= 0.6
 }
 
-// ── TwiML reply helper ─────────────────────────────────────────────────────
-function twimlReply(message: string): Response {
-  const escaped = message
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-  return new Response(
-    `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escaped}</Message></Response>`,
-    { status: 200, headers: { 'Content-Type': 'text/xml' } }
-  )
+// ── Send reply via Twilio REST API ────────────────────────────────────────
+// More reliable than TwiML response — not subject to webhook response timeout
+async function sendWhatsAppReply(to: string, body: string): Promise<void> {
+  const sid   = process.env.TWILIO_ACCOUNT_SID
+  const token = process.env.TWILIO_AUTH_TOKEN
+  // Env var can be bare "+972..." or "whatsapp:+972..." — normalise to whatsapp: prefix
+  const fromRaw = process.env.TWILIO_WHATSAPP_NUMBER || ''
+  const from = fromRaw.startsWith('whatsapp:') ? fromRaw : `whatsapp:${fromRaw}`
+
+  if (!sid || !token || !fromRaw) {
+    console.warn('[whatsapp-inbound] Missing Twilio credentials — reply not sent')
+    return
+  }
+
+  try {
+    const res = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`,
+        },
+        body: new URLSearchParams({ To: to, From: from, Body: body }).toString(),
+      }
+    )
+    if (!res.ok) {
+      const err = await res.text()
+      console.error('[whatsapp-inbound] Reply send failed:', res.status, err)
+    }
+  } catch (err) {
+    console.error('[whatsapp-inbound] Reply fetch error:', err)
+  }
 }
 
 // ── POST: inbound WhatsApp message ────────────────────────────────────────
@@ -250,25 +273,28 @@ export async function POST(request: NextRequest) {
 
   console.log(`[whatsapp-inbound] from=${from} → saved=${saved} updated=${updated} skipped=${skipped}`)
 
-  // ── TwiML reply ───────────────────────────────────────────────────────────
+  // ── Reply via Twilio REST API (async — not bound to webhook response time) ─
   if (saved + updated === 0 && actionableEvents.length === 0) {
-    return twimlReply('🤔 לא זיהיתי אירועים בהודעה. נסה לכתוב: שם האדם, אירוע, תאריך ושעה.')
+    await sendWhatsAppReply(
+      from,
+      '🤔 לא זיהיתי אירועים בהודעה.\nנסה לכתוב: שם האדם, אירוע, תאריך ושעה.\n\nדוגמה: "איתן — אימון כדורגל ביום ד׳ 16:00"'
+    )
+  } else if (saved + updated === 0) {
+    await sendWhatsAppReply(from, '⚠️ לא הצלחתי לשמור את האירועים (שגיאת שרת). נסה שוב.')
+  } else {
+    const lines: string[] = ['🗓️ *לוח אלוני — עודכן!*', '']
+    lines.push(...resultLines)
+    lines.push('')
+    const stats: string[] = []
+    if (saved > 0)   stats.push(`✅ ${saved} אירועים נוספו`)
+    if (updated > 0) stats.push(`🔄 ${updated} אירועים עודכנו`)
+    if (skipped > 0) stats.push(`⏭️ ${skipped} דולגו`)
+    lines.push(stats.join('\n'))
+    await sendWhatsAppReply(from, lines.join('\n'))
   }
 
-  if (saved + updated === 0) {
-    return twimlReply(`⚠️ לא הצלחתי לשמור את האירועים (שגיאת מסד נתונים). נסה שוב.`)
-  }
-
-  const summary: string[] = ['🗓️ *לוח אלוני — עודכן!*', '']
-  summary.push(...resultLines)
-  summary.push('')
-  const parts: string[] = []
-  if (saved > 0)    parts.push(`${saved} נוספו`)
-  if (updated > 0)  parts.push(`${updated} עודכנו`)
-  if (skipped > 0)  parts.push(`${skipped} דולגו`)
-  summary.push(parts.join(' · '))
-
-  return twimlReply(summary.join('\n'))
+  // Always return 200 immediately so Twilio doesn't retry
+  return new Response('OK', { status: 200 })
 }
 
 // ── GET: recent WhatsApp batches ──────────────────────────────────────────
