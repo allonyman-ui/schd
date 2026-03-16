@@ -82,27 +82,21 @@ function titlesAreSimilar(a: string, b: string): boolean {
   return overlap / Math.max(wordsA.length, wordsB.length) >= 0.6
 }
 
-// ── Twilio REST API reply ─────────────────────────────────────────────────
-async function sendWhatsAppReply(to: string, body: string): Promise<void> {
-  const sid = process.env.TWILIO_ACCOUNT_SID
-  const token = process.env.TWILIO_AUTH_TOKEN
-  const fromRaw = process.env.TWILIO_WHATSAPP_NUMBER || ''
-  const from = fromRaw.startsWith('whatsapp:') ? fromRaw : `whatsapp:${fromRaw}`
-  if (!sid || !token || !fromRaw) {
-    console.warn('[whatsapp-inbound] Missing Twilio creds — sid:', !!sid, 'token:', !!token, 'from:', !!fromRaw); return
-  }
-  console.log('[whatsapp-inbound] Sending reply via REST to:', to, 'from:', from.slice(0, 20))
-  try {
-    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`,
-      },
-      body: new URLSearchParams({ To: to, From: from, Body: body }).toString(),
-    })
-    if (!res.ok) console.error('[whatsapp-inbound] Reply failed:', res.status, await res.text())
-  } catch (err) { console.error('[whatsapp-inbound] Reply error:', err) }
+// ── TwiML reply helper ────────────────────────────────────────────────────
+function twimlReply(body: string): Response {
+  // Escape XML special chars so WhatsApp emoji/Hebrew don't break the response
+  const safe = body
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${safe}</Message></Response>`
+  console.log('[whatsapp-inbound] TwiML reply length:', xml.length)
+  return new Response(xml, { status: 200, headers: { 'Content-Type': 'text/xml' } })
+}
+function twimlEmpty(): Response {
+  return new Response('<?xml version="1.0" encoding="UTF-8"?><Response/>', {
+    status: 200, headers: { 'Content-Type': 'text/xml' },
+  })
 }
 
 // ── Download Twilio media (images, documents) ──────────────────────────────
@@ -293,7 +287,7 @@ export async function POST(request: NextRequest) {
 
   if (!messageBody && numMedia === 0) {
     console.log('[whatsapp-inbound] Empty — skipping')
-    return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
+    return twimlEmpty()
   }
 
   // Deduplication: if we already processed this MessageSid, skip (Twilio retries)
@@ -306,7 +300,7 @@ export async function POST(request: NextRequest) {
       .limit(1)
     if (existing && existing.length > 0) {
       console.log('[whatsapp-inbound] Duplicate MessageSid — skipping', messageSid)
-      return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
+      return twimlEmpty()
     }
   }
 
@@ -363,8 +357,7 @@ export async function POST(request: NextRequest) {
       ? '⚠️ לא הצלחתי לשמור את האירועים. נסה שוב.'
       : [`🗓️ *לוח אלוני — עודכן!*`, '', ...cards.map((c, i) => (i > 0 ? '\n' + c : c))].join('\n')
 
-    await sendWhatsAppReply(from, reply)
-    return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
+    return twimlReply(reply)
   }
 
   // ── Download media if present ─────────────────────────────────────────────
@@ -427,49 +420,43 @@ export async function POST(request: NextRequest) {
     }
   } catch (err) {
     console.error('[whatsapp-inbound] Claude error:', err)
-    await sendWhatsAppReply(from, '⚠️ שגיאת AI — נסה שוב בעוד רגע.')
-    return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
+    return twimlReply('⚠️ שגיאת AI — נסה שוב בעוד רגע.')
   }
 
   if (!result) {
-    await sendWhatsAppReply(from, '⚠️ לא הצלחתי לנתח את ההודעה. נסה שוב.')
-    return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
+    return twimlReply('⚠️ לא הצלחתי לנתח את ההודעה. נסה שוב.')
   }
 
   console.log('[whatsapp-inbound] Intent:', result.intent)
 
   // ── Handle intent ─────────────────────────────────────────────────────────
-  // ── Send reply immediately (before DB writes to avoid timeout) ────────────
+  // ── chat / event_query ────────────────────────────────────────────────────
   if (result.intent === 'chat' || result.intent === 'event_query') {
-    console.log('[whatsapp-inbound] Sending chat/query reply')
-    await sendWhatsAppReply(from, result.reply)
-    // Log async (don't block reply)
+    console.log('[whatsapp-inbound] Replying:', result.intent)
     void supabase.from('whatsapp_batches').insert({
       raw_text: `[WHATSAPP from: ${from} | sid: ${messageSid}]\n\n${messageBody}`,
       processed_events: [],
     })
-    return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
+    return twimlReply(result.reply)
   }
 
+  // ── clarification_needed ──────────────────────────────────────────────────
   if (result.intent === 'clarification_needed') {
-    console.log('[whatsapp-inbound] Sending clarification question')
-    const clarQuestion = clarificationCard(result.partial_events, result.missing_field)
-    await sendWhatsAppReply(from, clarQuestion)
-    // Save pending state async
+    console.log('[whatsapp-inbound] Asking clarification')
     const pendingState: PendingState = {
       type: 'pending_clarification',
       missing_field: result.missing_field,
       partial_events: result.partial_events,
       expires: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     }
-    void supabase.from('whatsapp_batches').insert({
+    await supabase.from('whatsapp_batches').insert({
       raw_text: `[PENDING from: ${from}]\n\n${messageBody}`,
       processed_events: pendingState as unknown as Record<string, unknown>[],
     })
-    return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
+    return twimlReply(clarificationCard(result.partial_events, result.missing_field))
   }
 
-  // ── event_add: save events then reply ─────────────────────────────────────
+  // ── event_add ─────────────────────────────────────────────────────────────
   const events = (result.events || []).filter((e: Record<string, unknown>) => e.action !== 'cancel')
   let saved = 0, updated = 0, skipped = 0
   const resultLines: string[] = []
@@ -477,32 +464,28 @@ export async function POST(request: NextRequest) {
   for (const ev of events) {
     const { status, id } = await upsertEvent(ev)
     if (id) ev._event_id = id
-    if (status === 'saved')   { saved++;   resultLines.push(eventCard(ev, '✅ נוסף')) }
+    if (status === 'saved')        { saved++;   resultLines.push(eventCard(ev, '✅ נוסף')) }
     else if (status === 'updated') { updated++; resultLines.push(eventCard(ev, '🔄 עודכן')) }
     else skipped++
   }
 
   console.log(`[whatsapp-inbound] saved=${saved} updated=${updated} skipped=${skipped}`)
 
-  // Build and send reply
-  let reply: string
-  if (saved + updated === 0 && events.length === 0) {
-    reply = '🤔 לא זיהיתי אירועים בהודעה.\nנסה: "איתן — אימון כדורגל ביום ד׳ 16:00"'
-  } else if (saved + updated === 0) {
-    reply = '⚠️ לא הצלחתי לשמור את האירועים (שגיאת שרת). נסה שוב.'
-  } else {
-    reply = ['🗓️ *לוח אלוני — עודכן!*', '', resultLines.join('\n\n')].join('\n')
-  }
-
-  await sendWhatsAppReply(from, reply)
-
-  // Log batch async (don't block reply)
-  void supabase.from('whatsapp_batches').insert({
+  await supabase.from('whatsapp_batches').insert({
     raw_text: `[WHATSAPP from: ${from} | sid: ${messageSid}]\n\n${messageBody}`,
     processed_events: events,
   })
 
-  return new Response('<Response/>', { status: 200, headers: { 'Content-Type': 'text/xml' } })
+  let reply: string
+  if (saved + updated === 0 && events.length === 0) {
+    reply = '🤔 לא זיהיתי אירועים בהודעה.\nנסה: "איתן — אימון כדורגל ביום ד׳ 16:00"'
+  } else if (saved + updated === 0) {
+    reply = '⚠️ לא הצלחתי לשמור את האירועים. נסה שוב.'
+  } else {
+    reply = ['🗓️ *לוח אלוני — עודכן!*', '', resultLines.join('\n\n')].join('\n')
+  }
+
+  return twimlReply(reply)
 }
 
 // ── GET: recent WhatsApp batches (non-pending) ────────────────────────────

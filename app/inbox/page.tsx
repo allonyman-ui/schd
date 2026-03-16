@@ -117,7 +117,7 @@ export default function InboxPage() {
   type LogEvent = ExtractedEvent & { _event_id?: string; _deleted?: boolean }
   type BatchItem = {id:string; raw_text:string; processed_events:LogEvent[]; created_at:string}
   const [activityLog, setActivityLog]   = useState<BatchItem[]>([])
-  const [logExpanded, setLogExpanded]   = useState(false)
+  const [logExpanded, setLogExpanded]   = useState(true)
   const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set())
   const [editingLogEvent, setEditingLogEvent] = useState<{ batchId: string; evIdx: number; draft: LogEvent } | null>(null)
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null)
@@ -130,7 +130,12 @@ export default function InboxPage() {
       .catch(() => {})
   }
 
-  useEffect(() => { loadActivityLog() }, [])
+  useEffect(() => {
+    loadActivityLog()
+    // Auto-refresh every 15 seconds so incoming WhatsApp messages appear
+    const timer = setInterval(loadActivityLog, 15000)
+    return () => clearInterval(timer)
+  }, [])
 
   async function handleProcess(text: string) {
     if (!text.trim()) return
