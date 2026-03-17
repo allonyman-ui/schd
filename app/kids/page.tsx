@@ -1155,6 +1155,7 @@ export default function KidsSchedulePage() {
   // WhatsApp send panel
   const [showWAPanel, setShowWAPanel] = useState(false)
   const [waMessage, setWaMessage] = useState('')
+  const [waTo, setWaTo] = useState('assaf')
   const [waSending, setWaSending] = useState(false)
   const [waSentMsg, setWaSentMsg] = useState('')
 
@@ -1469,7 +1470,7 @@ export default function KidsSchedulePage() {
       const res = await fetch('/api/whatsapp-send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: 'assaf', body: waMessage.trim() }),
+        body: JSON.stringify({ to: waTo, body: waMessage.trim() }),
       })
       if (res.ok) {
         setWaSentMsg('✅ ההודעה נשלחה!')
@@ -1553,7 +1554,27 @@ export default function KidsSchedulePage() {
               <button onClick={() => setShowWAPanel(false)} className="text-white/70 hover:text-white text-2xl leading-none">×</button>
             </div>
             <div className="px-5 py-4 space-y-3">
-              <p className="text-sm text-gray-500 text-right">הודעה תישלח לקבוצת המשפחה</p>
+              {/* Recipient selector */}
+              <div>
+                <p className="text-xs font-bold text-gray-500 mb-2 text-right">📨 שלח אל:</p>
+                <div className="flex flex-wrap gap-2 flex-row-reverse">
+                  {[
+                    { key: 'assaf', label: 'אסף' },
+                    { key: 'danil', label: 'דניאל' },
+                    { key: 'ami',   label: 'אמי' },
+                  ].map(p => (
+                    <button key={p.key} type="button" onClick={() => setWaTo(p.key)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-bold transition-all border-2 ${
+                        waTo === p.key
+                          ? 'text-white border-transparent'
+                          : 'bg-white text-gray-500 border-gray-200 hover:border-green-400'
+                      }`}
+                      style={waTo === p.key ? { background: 'linear-gradient(135deg,#25D366,#128C7E)' } : {}}>
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <textarea
                 value={waMessage}
                 onChange={e => { setWaMessage(e.target.value); setWaSentMsg('') }}
@@ -2165,31 +2186,88 @@ export default function KidsSchedulePage() {
         {/* ── KIDS TAB ───────────────────────────────────────────────── */}
         {!restWeekMode && activeTab === 'kids' && (
           loadingEvents ? <div className="text-center py-16 text-gray-400 text-xl">⏳ טוען...</div> : (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {KIDS.map(kid => {
-                const theme = THEMES[kid.key][kidThemeIdx[kid.key]]
-                const evs = getPersonEvents(kid.key)
-                return (
-                  <div key={kid.key} className="rounded-3xl overflow-hidden shadow-lg flex flex-col"
-                    style={{ background: theme.bg, border: `2px solid ${theme.border}44` }}>
-                    <div className="px-5 pt-5 pb-4 flex items-center gap-4 flex-row-reverse" style={{ background: theme.headerGrad }}>
-                      <KidAvatar kid={kid} theme={theme} onClick={() => cycleTheme(kid.key)} />
-                      <div className="flex-1 text-right">
-                        <div className="font-black text-2xl text-white drop-shadow">{kid.name}</div>
-                        <div className="text-white/70 text-xs mt-0.5">{evs.length===0?'יום חופשי 🎉':`${evs.length} פעילויות היום`}</div>
-                        <div className="text-white/60 text-xs mt-1">לחץ על התמונה לשנות עיצוב</div>
-                        <button onClick={() => openAddEvent(kid.key)} className="mt-2 text-xs font-black px-3 py-1 rounded-xl transition"
-                          style={{ background: 'rgba(255,255,255,0.25)', color: 'white' }}>➕ הוסף אירוע</button>
+            <>
+              {/* ── Kids cards ─────────────────────────────────────────── */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {KIDS.map(kid => {
+                  const theme = THEMES[kid.key][kidThemeIdx[kid.key]]
+                  const evs = getPersonEvents(kid.key)
+                  return (
+                    <div key={kid.key} className="rounded-3xl overflow-hidden shadow-lg flex flex-col"
+                      style={{ background: theme.bg, border: `2px solid ${theme.border}44` }}>
+                      <div className="px-5 pt-5 pb-4 flex items-center gap-4 flex-row-reverse" style={{ background: theme.headerGrad }}>
+                        <KidAvatar kid={kid} theme={theme} onClick={() => cycleTheme(kid.key)} />
+                        <div className="flex-1 text-right">
+                          <div className="font-black text-2xl text-white drop-shadow">{kid.name}</div>
+                          <div className="text-white/70 text-xs mt-0.5">{evs.length===0?'יום חופשי 🎉':`${evs.length} פעילויות היום`}</div>
+                          <div className="text-white/60 text-xs mt-1">לחץ על התמונה לשנות עיצוב</div>
+                          <button onClick={() => openAddEvent(kid.key)} className="mt-2 text-xs font-black px-3 py-1 rounded-xl transition"
+                            style={{ background: 'rgba(255,255,255,0.25)', color: 'white' }}>➕ הוסף אירוע</button>
+                        </div>
+                      </div>
+                      <div className="flex-1 px-3 pt-3 pb-3">
+                        {evs.length===0 ? <div className="text-center py-8 text-4xl opacity-30">🎈</div>
+                        : evs.map(ev => <EventCard key={ev.id} event={ev} theme={theme} onToggle={toggleEvent} onDelete={deleteEvent} onEdit={openEditEvent} reactions={reactions[ev.id]||[]} onReact={emoji => toggleReaction(ev.id, emoji)} />)}
                       </div>
                     </div>
-                    <div className="flex-1 px-3 pt-3 pb-3">
-                      {evs.length===0 ? <div className="text-center py-8 text-4xl opacity-30">🎈</div>
-                      : evs.map(ev => <EventCard key={ev.id} event={ev} theme={theme} onToggle={toggleEvent} onDelete={deleteEvent} onEdit={openEditEvent} reactions={reactions[ev.id]||[]} onReact={emoji => toggleReaction(ev.id, emoji)} />)}
+                  )
+                })}
+              </div>
+
+              {/* ── Adults mini-tiles (only when they have events today) ─ */}
+              {(() => {
+                const adultsWithEvents = ADULTS.map(a => ({ ...a, evs: getPersonEvents(a.key) })).filter(a => a.evs.length > 0)
+                if (adultsWithEvents.length === 0) return null
+                const adultThemes = { assaf: ADULT_THEMES.assaf, danil: ADULT_THEMES.danil }
+                return (
+                  <div className="mt-4">
+                    <div className="text-xs font-bold text-white/50 mb-2 text-right">גם היום:</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {adultsWithEvents.map(adult => {
+                        const theme = adultThemes[adult.key as 'assaf'|'danil']
+                        return (
+                          <div key={adult.key} className="rounded-2xl overflow-hidden shadow-md flex flex-col"
+                            style={{ background: theme.bg, border: `2px solid ${theme.border}44` }}>
+                            {/* Compact header */}
+                            <div className="px-4 py-3 flex items-center gap-3 flex-row-reverse" style={{ background: theme.headerGrad }}>
+                              <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl flex-shrink-0"
+                                style={{ background: 'rgba(255,255,255,0.2)', border: '2px solid rgba(255,255,255,0.4)' }}>{adult.emoji}</div>
+                              <div className="flex-1 text-right">
+                                <div className="font-black text-base text-white">{adult.name}</div>
+                                <div className="text-white/60 text-xs">{adult.evs.length} אירועים היום</div>
+                              </div>
+                              <button onClick={() => openAddEvent(adult.key)}
+                                className="text-white/70 hover:text-white text-xs bg-white/20 hover:bg-white/30 px-2 py-1 rounded-lg transition flex-shrink-0">
+                                ➕
+                              </button>
+                            </div>
+                            {/* Events list — compact */}
+                            <div className="px-3 py-2 space-y-1.5">
+                              {adult.evs.map(ev => (
+                                <div key={ev.id} className="flex items-center gap-2 flex-row-reverse rounded-xl px-2.5 py-1.5 group/ae"
+                                  style={{ background: theme.accent + '12' }}>
+                                  {ev.start_time && (
+                                    <span className="text-xs font-black flex-shrink-0" dir="ltr" style={{ color: theme.accent }}>
+                                      {ev.start_time.slice(0,5)}
+                                    </span>
+                                  )}
+                                  <span className="flex-1 text-sm font-bold text-right truncate" style={{ color: theme.textColor }}>{ev.title}</span>
+                                  {ev.location && <span className="text-xs text-gray-400 truncate max-w-[80px]">📍 {ev.location}</span>}
+                                  <div className="flex gap-0.5 opacity-0 group-hover/ae:opacity-100 transition flex-shrink-0">
+                                    <button onClick={() => openEditEvent(ev)} className="text-gray-300 hover:text-blue-500 text-xs">✏️</button>
+                                    <button onClick={() => deleteEvent(ev.id)} className="text-gray-300 hover:text-red-500 text-xs">🗑️</button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )
-              })}
-            </div>
+              })()}
+            </>
           )
         )}
 

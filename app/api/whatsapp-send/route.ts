@@ -18,15 +18,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Twilio env vars not configured' }, { status: 500 })
   }
 
-  // Resolve recipient — predefined family numbers or any passed in
+  // Resolve recipient — matches the env var names in .env.local
   const FAMILY_NUMBERS: Record<string, string> = {
-    assaf: process.env.PHONE_ASSAF || '',
-    danil: process.env.PHONE_DANIL || '',
-    ami:   process.env.PHONE_AMI   || '',
-    group: process.env.PHONE_ASSAF || '', // default to assaf for "group" (Twilio sandbox is 1:1)
+    assaf: process.env.WHATSAPP_PHONE_ASSAF || '',
+    danil: process.env.WHATSAPP_PHONE_DANIL || '',
+    ami:   process.env.WHATSAPP_PHONE_AMI_MOM || '',
+    group: process.env.WHATSAPP_PHONE_ASSAF  || '', // "group" sends to assaf (Twilio sandbox is 1:1)
   }
 
-  const recipient = FAMILY_NUMBERS[to] || to || FAMILY_NUMBERS.assaf
+  // Accept either a key name ("assaf") or a raw number ("+972501234567")
+  const recipient = FAMILY_NUMBERS[to] || (to?.startsWith('+') ? to : null) || FAMILY_NUMBERS.assaf
   if (!recipient) {
     return NextResponse.json({ error: 'No recipient number configured' }, { status: 400 })
   }
