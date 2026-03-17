@@ -343,9 +343,36 @@ function renderQuote(ctx: CanvasRenderingContext2D, W: number, H: number, t: num
 
 function renderOutro(ctx: CanvasRenderingContext2D, W: number, H: number, t: number) {
   darkBg(ctx, W, H)
-  ctx.globalAlpha = clamp(1-t*3,0,1)  // quick fade to black
-  ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H)
-  ctx.globalAlpha=1
+
+  // CTA card — visible for the first 75% of the outro, then fades to black
+  const fadeIn  = clamp(t * 8, 0, 1)
+  const fadeOut = clamp((t - 0.65) * 3, 0, 1)
+  const alpha   = fadeIn * (1 - fadeOut)
+
+  ctx.save()
+  ctx.globalAlpha = alpha * 0.12; ctx.fillStyle = '#60A5FA'
+  ctx.beginPath(); ctx.arc(W*.5, H*.47, W*.42, 0, Math.PI*2); ctx.fill()
+  ctx.restore()
+
+  ctx.globalAlpha = alpha
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+
+  ctx.font = `${W*.18}px Arial`
+  ctx.fillText('🏠', W/2, H*.37)
+
+  ctx.font = `${W*.048}px Arial`; ctx.fillStyle = '#94A3B8'
+  ctx.fillText('לפרטים נוספים ולוח המשפחה המלא:', W/2, H*.47)
+
+  ctx.font = `900 ${W*.09}px Arial`; ctx.fillStyle = '#60A5FA'
+  ctx.fillText('allonys.com', W/2, H*.56)
+
+  ctx.font = `${W*.042}px Arial`; ctx.fillStyle = 'rgba(255,255,255,.35)'
+  ctx.fillText('לוח אלוני — לכל היום, לכל המשפחה', W/2, H*.64)
+
+  // Final fade to black
+  ctx.globalAlpha = clamp((t - 0.75) * 4, 0, 1)
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H)
+  ctx.globalAlpha = 1
 }
 
 // ── Main render orchestrator ─────────────────────────────────────────────
@@ -368,7 +395,7 @@ function renderFrame(
   const MSG_DUR   = customMsg ? 3 : 0
   const SUMMARY   = 3
   const QUOTE_DUR = 4
-  const OUTRO     = 1
+  const OUTRO     = 2.5
   const TOTAL     = INTRO + showPeople.length*PER_P + LUNCH_DUR + SUMMARY + MSG_DUR + QUOTE_DUR + OUTRO
 
   ctx.clearRect(0,0,W,H); ctx.direction='rtl'
@@ -479,6 +506,7 @@ export default function VideoSummaryModal({ onClose, defaultDate }: {
   const [customMessage, setCustomMessage] = useState('')
   const [progress,      setProgress]      = useState(0)
   const [videoUrl,      setVideoUrl]      = useState<string | null>(null)
+  const [videoExt,      setVideoExt]      = useState<string>('mp4')
   const [errorMsg,      setErrorMsg]      = useState('')
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const abortRef  = useRef(false)
@@ -531,9 +559,14 @@ export default function VideoSummaryModal({ onClose, defaultDate }: {
     canvas.width=W; canvas.height=H
     const ctx=canvas.getContext('2d')!
 
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+    // Prefer MP4 (native on iOS/Safari), then H.264 WebM, then VP9 WebM
+    const mimeType = MediaRecorder.isTypeSupported('video/mp4')
+      ? 'video/mp4'
+      : MediaRecorder.isTypeSupported('video/webm;codecs=h264')
+      ? 'video/webm;codecs=h264'
+      : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
       ? 'video/webm;codecs=vp9'
-      : MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : 'video/mp4'
+      : 'video/webm'
 
     let stream: MediaStream
     try { stream=canvas.captureStream(30) }
@@ -567,6 +600,8 @@ export default function VideoSummaryModal({ onClose, defaultDate }: {
 
     if (abortRef.current) { setStatus('picking'); return }
     const blob = await done
+    const ext = recorder.mimeType.includes('mp4') ? 'mp4' : 'webm'
+    setVideoExt(ext)
     setVideoUrl(URL.createObjectURL(blob))
     setStatus('done')
   }, [])
@@ -696,16 +731,21 @@ export default function VideoSummaryModal({ onClose, defaultDate }: {
                 <video src={videoUrl} controls autoPlay loop playsInline
                   className="w-full h-full object-contain" />
               </div>
-              <div className="flex gap-2">
-                <a href={videoUrl} download={`family-${dateStr}.webm`}
+              <div className="flex gap-2 mb-3">
+                <a href={videoUrl} download={`family-${dateStr}.${videoExt}`}
                   className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2.5 rounded-xl text-sm flex items-center justify-center gap-1.5 transition">
-                  ⬇️ הורד
+                  ⬇️ הורד {videoExt.toUpperCase()}
                 </a>
                 <button onClick={resetToPickDate}
                   className="flex-1 bg-purple-100 hover:bg-purple-200 text-purple-700 font-bold py-2.5 rounded-xl text-sm transition">
                   📅 יום אחר
                 </button>
               </div>
+              {/* CTA link */}
+              <a href="https://allonys.com" target="_blank" rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold py-2.5 rounded-xl text-sm transition">
+                🏠 לוח המשפחה המלא — <span className="underline">allonys.com</span>
+              </a>
             </div>
           )}
 

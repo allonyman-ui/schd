@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
   const {
     person, title, date, start_time, end_time,
     location, notes, is_recurring, recurrence_days,
-    completed, meeting_link
+    completed, meeting_link, attachment_url
   } = body
 
   const baseRow = {
@@ -72,21 +72,7 @@ export async function POST(request: NextRequest) {
     ...baseRow,
     completed: completed ?? false,
     meeting_link: meeting_link || null,
-  }
-
-  // Duplicate check: same person + title + date (+ start_time if present)
-  if (baseRow.person && baseRow.title && baseRow.date) {
-    let dupQuery = supabase
-      .from('events')
-      .select('id')
-      .eq('person', baseRow.person)
-      .eq('title', baseRow.title)
-      .eq('date', baseRow.date)
-    if (baseRow.start_time) dupQuery = dupQuery.eq('start_time', baseRow.start_time)
-    const { data: existing } = await dupQuery.limit(1)
-    if (existing && existing.length > 0) {
-      return NextResponse.json({ duplicate: true, id: existing[0].id }, { status: 200 })
-    }
+    attachment_url: attachment_url || null,
   }
 
   let result = await supabase.from('events').insert(fullRow).select().single()

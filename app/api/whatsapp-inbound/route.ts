@@ -210,7 +210,7 @@ async function fetchUpcomingSchedule(): Promise<string> {
 type PendingState =
   | { type: 'pending_clarification'; missing_field: string; partial_events: Array<Record<string, unknown>>; expires: string }
   | { type: 'pending_duplicate';     dup_pairs: DupPair[]; clean_events: Array<Record<string, unknown>>; expires: string }
-  | { type: 'pending_confirmation';  events: Array<Record<string, unknown>>; expires: string }
+  | { type: 'pending_confirmation';  events: Array<Record<string, unknown>>; dupPairs: DupPair[]; expires: string }
 
 async function getPending(from: string) {
   const supabase = createServiceClient()
@@ -500,14 +500,16 @@ export async function POST(request: NextRequest) {
       const resolvedEvs = (pending.state.partial_events || []).map(ev => ({ ...ev, person: resolvedPerson })) as Array<Record<string, unknown>>
 
       // Check for duplicates then show confirmation
+      const clarDupPairs: DupPair[] = []
       const dupWarn = new Set<number>()
       for (let i = 0; i < resolvedEvs.length; i++) {
         const existing = await findDuplicate(resolvedEvs[i])
-        if (existing) dupWarn.add(i)
+        if (existing) { dupWarn.add(i); clarDupPairs.push({ new_ev: resolvedEvs[i], existing }) }
       }
       const confirmPending: PendingState = {
         type: 'pending_confirmation',
         events: resolvedEvs,
+        dupPairs: clarDupPairs,
         expires: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       }
       await supabase.from('whatsapp_batches').insert({
@@ -571,18 +573,31 @@ export async function POST(request: NextRequest) {
       }
 
       if (isConfirm) {
-        // Save all confirmed events
+        // For duplicate-warned events, update the existing record. For clean events, insert fresh.
+        const storedDupPairs = (pending.state as { dupPairs?: DupPair[] }).dupPairs || []
         for (const ev of pendingEvents) {
-          const { status, id } = await insertEvent(ev)
-          if (id) ev._event_id = id
-          if (status === 'saved') { saved++; cards.push(eventCard(ev, '✅ נוסף')) }
+          const dup = storedDupPairs.find(p =>
+            p.new_ev.title   === ev.title &&
+            p.new_ev.date    === ev.date  &&
+            p.new_ev.person  === ev.person
+          )
+          if (dup) {
+            // User confirmed over a duplicate — update the existing event
+            const { status, id } = await updateEvent(dup.existing.id, ev)
+            if (id) ev._event_id = id
+            if (status === 'updated') { updated++; cards.push(eventCard(ev, '🔄 עודכן')) }
+          } else {
+            const { status, id } = await insertEvent(ev)
+            if (id) ev._event_id = id
+            if (status === 'saved') { saved++; cards.push(eventCard(ev, '✅ נוסף')) }
+          }
           resolvedEvents.push(ev)
         }
         void supabase.from('whatsapp_batches').insert({
           raw_text: `[WHATSAPP from: ${from} | sid: ${messageSid}]\n\n[אישור]`,
           processed_events: resolvedEvents,
         })
-        const reply = saved === 0
+        const reply = saved + updated === 0
           ? '⚠️ לא הצלחתי לשמור. נסה שוב.'
           : [`🗓️ *לוח אלוני — עודכן!*`, '', ...cards.map((c, i) => i > 0 ? '\n' + c : c)].join('\n')
         return twimlReply(reply)
@@ -592,14 +607,16 @@ export async function POST(request: NextRequest) {
       const corrected = await applyCorrectionWithClaude(pendingEvents, answer, today)
       if (corrected && corrected.length > 0) {
         // Check again for duplicates in the corrected events
+        const correctedDupPairs: DupPair[] = []
         const dupWarnings = new Set<number>()
         for (let i = 0; i < corrected.length; i++) {
           const existing = await findDuplicate(corrected[i])
-          if (existing) dupWarnings.add(i)
+          if (existing) { dupWarnings.add(i); correctedDupPairs.push({ new_ev: corrected[i], existing }) }
         }
         const newPending: PendingState = {
           type: 'pending_confirmation',
           events: corrected,
+          dupPairs: correctedDupPairs,
           expires: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
         }
         await supabase.from('whatsapp_batches').insert({
@@ -763,13 +780,15 @@ export async function POST(request: NextRequest) {
     return twimlReply('🤔 לא זיהיתי אירועים בהודעה.\nנסה: "איתן — אימון כדורגל ביום ד׳ 16:00"')
   }
 
-  // ── Check for existing similar events (warn in confirmation, don't block) ─
+  // ── Check for existing similar events (warn in confirmation, store for update-on-confirm) ─
+  const eventDupPairs: DupPair[] = []
   const dupWarnings = new Set<number>()
   for (let i = 0; i < events.length; i++) {
     const existing = await findDuplicate(events[i])
     if (existing) {
       console.log('[whatsapp-inbound] Similar event found (will warn):', existing.title)
       dupWarnings.add(i)
+      eventDupPairs.push({ new_ev: events[i], existing })
     }
   }
 
@@ -777,6 +796,7 @@ export async function POST(request: NextRequest) {
   const pendingState: PendingState = {
     type: 'pending_confirmation',
     events,
+    dupPairs: eventDupPairs,
     expires: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
   }
   await supabase.from('whatsapp_batches').insert({

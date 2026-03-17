@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { format, addDays, subDays } from 'date-fns'
 import { he } from 'date-fns/locale'
 import WeatherWidget from '@/components/WeatherWidget'
@@ -12,6 +12,12 @@ interface Event {
   location: string | null; notes: string | null
   is_recurring: boolean; recurrence_days: string[] | null
   completed?: boolean; meeting_link?: string | null
+  attachment_url?: string | null
+}
+
+interface Birthday {
+  id: string; name: string; month: number; day: number
+  birth_year: number | null; type: string; emoji: string; notes: string | null
 }
 
 interface Reminder {
@@ -32,6 +38,7 @@ interface EventForm {
   location: string; notes: string
   is_recurring: boolean; recurrence_days: string[]
   meeting_link: string
+  attachment_url: string
 }
 
 const DAY_NAMES = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
@@ -119,6 +126,21 @@ const ALL_PEOPLE = [
   { key: 'assaf', name: 'אסף' },
   { key: 'danil', name: 'דניאל' },
 ]
+const PEOPLE_NAMES: Record<string, string> = Object.fromEntries(ALL_PEOPLE.map(p => [p.key, p.name]))
+
+// Fuzzy title similarity (mirrors backend logic)
+function titlesSimilar(a: string, b: string): boolean {
+  const norm = (s: string) => s.replace(/[\s\-_.,!?׳״'"()[\]]/g, '').toLowerCase()
+  const na = norm(a), nb = norm(b)
+  if (na === nb) return true
+  if (na.length >= 4 && nb.includes(na)) return true
+  if (nb.length >= 4 && na.includes(nb)) return true
+  const wa = a.split(/\s+/).filter(w => w.length > 2)
+  const wb = b.split(/\s+/).filter(w => w.length > 2)
+  if (!wa.length || !wb.length) return false
+  const overlap = wa.filter(w => wb.includes(w)).length
+  return overlap / Math.max(wa.length, wb.length) >= 0.7
+}
 const FAMILY_PEOPLE = [
   { key: 'ami',   name: 'אמי',    color: '#E91E63', photo: 'https://i.imgur.com/cG8XKwn.jpeg' as string|null, emoji: '🌸' },
   { key: 'alex',  name: 'אלכס',   color: '#8E24AA', photo: 'https://i.imgur.com/G0j3TD8.jpeg' as string|null, emoji: '🎵' },
@@ -127,14 +149,14 @@ const FAMILY_PEOPLE = [
   { key: 'danil', name: 'דניאל',  color: '#15803D', photo: null, emoji: '🌿' },
 ]
 
-type TabKey = 'family' | 'kids' | 'assaf' | 'danil' | 'stats' | 'week'
+type TabKey = 'family' | 'kids' | 'assaf' | 'danil' | 'week' | 'links'
 const TABS = [
   { key: 'family' as TabKey, label: '🏠 משפחה' },
   { key: 'week'   as TabKey, label: '📅 שבועי' },
   { key: 'kids'   as TabKey, label: '👧👦 ילדים' },
   { key: 'assaf'  as TabKey, label: '💼 אסף' },
   { key: 'danil'  as TabKey, label: '🌿 דניאל' },
-  { key: 'stats'  as TabKey, label: '📊 תובנות AI' },
+  { key: 'links'  as TabKey, label: '🔗 קישורים' },
 ]
 
 // ── Pure week-date helper (outside component) ──────────────────────────────
@@ -147,12 +169,6 @@ function getWeekDates(date: Date): Date[] {
   })
 }
 
-const INSIGHT_STYLES: Record<string,{ bg: string; border: string; dot: string; titleColor: string }> = {
-  warning:    { bg: '#FEF2F2', border: '#FECACA', dot: '#EF4444', titleColor: '#991B1B' },
-  connection: { bg: '#F5F3FF', border: '#DDD6FE', dot: '#7C3AED', titleColor: '#4C1D95' },
-  tip:        { bg: '#EFF6FF', border: '#BFDBFE', dot: '#2563EB', titleColor: '#1E3A8A' },
-  info:       { bg: '#F9FAFB', border: '#E5E7EB', dot: '#6B7280', titleColor: '#374151' },
-}
 
 // ── Live clock ─────────────────────────────────────────────────────────────
 function LiveClock() {
@@ -201,12 +217,24 @@ function KidAvatar({ kid, theme, onClick }: {
   )
 }
 
+const REACTION_EMOJIS = ['👍', '❤️', '✅', '😂', '❓', '🔥', '😮']
+
 // ── EventCard ──────────────────────────────────────────────────────────────
-function EventCard({ event, theme, onToggle, onDelete, onEdit }: {
+function EventCard({ event, theme, onToggle, onDelete, onEdit, reactions, onReact }: {
   event: Event; theme: KidTheme
   onToggle: (e: Event) => void; onDelete: (id: string) => void; onEdit: (e: Event) => void
+  reactions: { person: string; emoji: string }[]
+  onReact: (emoji: string) => void
 }) {
   const done = !!event.completed
+  const [showPicker, setShowPicker] = useState(false)
+
+  // Group reactions by emoji
+  const grouped: Record<string, number> = {}
+  for (const r of reactions) {
+    grouped[r.emoji] = (grouped[r.emoji] || 0) + 1
+  }
+
   return (
     <div className="group relative rounded-2xl p-3 mb-2 transition-all"
       style={{
@@ -216,8 +244,13 @@ function EventCard({ event, theme, onToggle, onDelete, onEdit }: {
         opacity: done ? 0.6 : 1,
       }}>
       <div className="flex items-start gap-2 flex-row-reverse">
-        <input type="checkbox" checked={done} onChange={() => onToggle(event)}
-          className="mt-1 w-4 h-4 flex-shrink-0 cursor-pointer rounded" style={{ accentColor: theme.accent }} />
+        <button onClick={() => onToggle(event)}
+          className="mt-0.5 flex-shrink-0 rounded-full transition-all active:scale-90 flex items-center justify-center"
+          style={{ width: 30, height: 30, minWidth: 30, minHeight: 30,
+            background: done ? theme.accent : 'transparent',
+            border: `2.5px solid ${done ? theme.accent : theme.border}66` }}>
+          {done && <span className="text-white font-black text-sm leading-none">✓</span>}
+        </button>
         <div className="flex-1 min-w-0 text-right">
           {(event.start_time || event.is_recurring) && (
             <div className="flex flex-wrap gap-1 flex-row-reverse mb-1">
@@ -252,6 +285,42 @@ function EventCard({ event, theme, onToggle, onDelete, onEdit }: {
               className="inline-flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-lg mt-1.5 transition-opacity hover:opacity-80"
               style={{ background: theme.accent, color: '#fff' }}>🔗 כניסה לפגישה</a>
           )}
+          {/* Attachment thumbnail */}
+          {event.attachment_url && (
+            <div className="mt-2">
+              <a href={event.attachment_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
+                <img src={event.attachment_url} alt="קובץ מצורף" className="rounded-xl object-cover shadow-sm hover:opacity-90 transition-opacity"
+                  style={{ width: 80, height: 80 }} />
+              </a>
+            </div>
+          )}
+          {/* Reactions row */}
+          <div className="flex items-center gap-1 flex-row-reverse mt-1.5 flex-wrap">
+            {Object.entries(grouped).map(([emoji, count]) => (
+              <button key={emoji} onClick={() => onReact(emoji)}
+                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs font-bold transition-all hover:scale-110 active:scale-95"
+                style={{ background: theme.badgeBg, color: theme.badgeText }}>
+                <span>{emoji}</span>
+                {count > 1 && <span>{count}</span>}
+              </button>
+            ))}
+            {/* + reaction button */}
+            <div className="relative">
+              <button onClick={() => setShowPicker(p => !p)}
+                className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black transition-all hover:scale-110"
+                style={{ background: theme.badgeBg, color: theme.badgeText }}>+</button>
+              {showPicker && (
+                <div className="absolute bottom-full mb-1 right-0 flex gap-1 bg-white rounded-2xl shadow-xl border border-gray-100 px-2 py-1.5 z-20 flex-row-reverse">
+                  {REACTION_EMOJIS.map(e => (
+                    <button key={e} onClick={() => { onReact(e); setShowPicker(false) }}
+                      className="text-base hover:scale-125 transition-transform active:scale-95">
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
         <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
           <button onClick={() => onEdit(event)} className="text-gray-300 hover:text-blue-500 text-xs" title="ערוך">✏️</button>
@@ -262,13 +331,37 @@ function EventCard({ event, theme, onToggle, onDelete, onEdit }: {
   )
 }
 
+type DupWarning = { person: string; existingTitle: string }
+
 // ── EventModal ─────────────────────────────────────────────────────────────
-function EventModal({ form, editing, onClose, onSave, onChange }: {
+function EventModal({ form, editing, onClose, onSave, onSaveAnyway, onChange, dupWarning }: {
   form: EventForm; editing: boolean
-  onClose: () => void; onSave: () => void; onChange: (f: Partial<EventForm>) => void
+  onClose: () => void; onSave: () => void; onSaveAnyway: () => void
+  onChange: (f: Partial<EventForm>) => void
+  dupWarning: DupWarning[] | null
 }) {
   const cls = "w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white text-right"
   const lbl = "block text-xs font-bold text-gray-500 mb-1 text-right"
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/upload', { method: 'POST', body: fd })
+      if (res.ok) {
+        const { url } = await res.json()
+        onChange({ attachment_url: url })
+      }
+    } finally {
+      setUploading(false)
+    }
+  }
+
   const toggleDay = (day: string) => onChange({
     recurrence_days: form.recurrence_days.includes(day)
       ? form.recurrence_days.filter(d => d !== day)
@@ -328,6 +421,37 @@ function EventModal({ form, editing, onClose, onSave, onChange }: {
             <textarea value={form.notes} onChange={e => onChange({ notes: e.target.value })} placeholder="מה להביא, הוראות, הערות..." rows={3} className={cls + ' resize-none'} /></div>
           <div><label className={lbl}>🔗 קישור לפגישה (אופציונלי)</label>
             <input type="url" value={form.meeting_link} onChange={e => onChange({ meeting_link: e.target.value })} placeholder="https://..." className={cls} dir="ltr" /></div>
+
+          {/* Photo/attachment upload */}
+          <div>
+            <label className={lbl}>📎 תמונה / קובץ מצורף (אופציונלי)</label>
+            <input
+              type="file"
+              accept="image/*,.pdf,.doc,.docx"
+              className="hidden"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+            />
+            {form.attachment_url ? (
+              <div className="flex items-center gap-3 flex-row-reverse">
+                <a href={form.attachment_url} target="_blank" rel="noopener noreferrer">
+                  <img src={form.attachment_url} alt="קובץ מצורף" className="w-16 h-16 object-cover rounded-xl shadow-sm" />
+                </a>
+                <button type="button" onClick={() => onChange({ attachment_url: '' })}
+                  className="text-xs text-red-500 hover:text-red-700 font-bold border border-red-200 rounded-xl px-2 py-1 transition">
+                  ✕ הסר
+                </button>
+              </div>
+            ) : (
+              <button type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="flex items-center gap-2 text-sm font-bold text-blue-600 border-2 border-dashed border-blue-200 rounded-xl px-4 py-2.5 hover:bg-blue-50 transition disabled:opacity-50">
+                {uploading ? '⏳ מעלה...' : '📎 הוסף תמונה/קובץ'}
+              </button>
+            )}
+          </div>
+
           <div className="rounded-2xl border-2 border-gray-100 p-3">
             <label className="flex items-center gap-2 cursor-pointer flex-row-reverse justify-end">
               <span className="text-sm font-bold text-gray-700">אירוע קבוע (חוזר)</span>
@@ -348,12 +472,37 @@ function EventModal({ form, editing, onClose, onSave, onChange }: {
             )}
           </div>
         </div>
-        <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-row-reverse">
-          <button onClick={onSave} disabled={!form.title.trim() || !form.persons.length}
-            className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-black py-2.5 rounded-2xl transition shadow-md text-sm">
-            {editing ? '💾 שמור שינויים' : form.persons.length > 1 ? `✅ הוסף ${form.persons.length} אירועים` : '✅ הוסף אירוע'}
-          </button>
-          <button onClick={onClose} className="px-5 py-2.5 rounded-2xl border-2 border-gray-200 text-gray-600 font-bold text-sm hover:bg-gray-50 transition">ביטול</button>
+        <div className="px-6 py-4 border-t border-gray-100 space-y-3">
+          {/* Duplicate warning — shown instead of normal save button */}
+          {dupWarning && dupWarning.length > 0 ? (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl px-4 py-3 text-right space-y-1.5">
+              <p className="font-black text-amber-800 text-sm">⚠️ נמצא אירוע דומה בלוח!</p>
+              {dupWarning.map((d, i) => (
+                <p key={i} className="text-xs text-amber-700">
+                  &quot;{d.existingTitle}&quot; כבר קיים עבור {PEOPLE_NAMES[d.person] || d.person}
+                </p>
+              ))}
+              <p className="text-xs text-amber-600">להוסיף בכל זאת?</p>
+              <div className="flex gap-2 pt-1 flex-row-reverse">
+                <button onClick={onSaveAnyway}
+                  className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black py-2 rounded-xl text-sm transition shadow-sm">
+                  ✅ כן, הוסף בכל זאת
+                </button>
+                <button onClick={onClose}
+                  className="flex-1 bg-white hover:bg-gray-50 text-gray-600 font-bold py-2 rounded-xl text-sm border-2 border-gray-200 transition">
+                  ❌ בטל
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-3 flex-row-reverse">
+              <button onClick={onSave} disabled={!form.title.trim() || !form.persons.length}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-black py-2.5 rounded-2xl transition shadow-md text-sm">
+                {editing ? '💾 שמור שינויים' : form.persons.length > 1 ? `✅ הוסף ${form.persons.length} אירועים` : '✅ הוסף אירוע'}
+              </button>
+              <button onClick={onClose} className="px-5 py-2.5 rounded-2xl border-2 border-gray-200 text-gray-600 font-bold text-sm hover:bg-gray-50 transition">ביטול</button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -464,11 +613,107 @@ function GroceryPanel({ items, newVal, loading, onNewChange, onAdd, onToggle, on
   )
 }
 
-// ── Standalone Reminders Panel ──────────────────────────────────────────────
-function RemindersPanel({ reminders, newVal, loading, onNewChange, onAdd, onDelete }: {
-  reminders: Reminder[]; newVal: string; loading: boolean
-  onNewChange: (v: string) => void; onAdd: () => void; onDelete: (id: string) => void
+// ── Family Links Panel ──────────────────────────────────────────────────────
+const LINK_CATEGORIES = [
+  { label: 'בית ספר', emoji: '🏫', color: '#3B82F6' },
+  { label: 'בריאות',  emoji: '🏥', color: '#EF4444' },
+  { label: 'ספורט',   emoji: '⚽', color: '#10B981' },
+  { label: 'בידור',   emoji: '🎬', color: '#8B5CF6' },
+  { label: 'עבודה',   emoji: '💼', color: '#F59E0B' },
+  { label: 'אחר',     emoji: '🔗', color: '#6B7280' },
+]
+function LinksPanel({ links, newLinkTitle, newLinkUrl, loading, onTitleChange, onUrlChange, onAdd, onDelete }: {
+  links: { id: string; title: string; url: string }[]
+  newLinkTitle: string; newLinkUrl: string; loading: boolean
+  onTitleChange: (v: string) => void; onUrlChange: (v: string) => void
+  onAdd: () => void; onDelete: (id: string) => void
 }) {
+  const hostOf = (url: string) => { try { return new URL(url).hostname.replace('www.','') } catch { return url } }
+  const faviconOf = (url: string) => { try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=32` } catch { return null } }
+
+  return (
+    <div className="bg-white rounded-3xl shadow-md overflow-hidden border border-blue-100">
+      {/* Header */}
+      <div className="px-5 py-4 flex items-center gap-3 flex-row-reverse"
+        style={{ background: 'linear-gradient(135deg,#2563EB,#4F46E5)' }}>
+        <span className="text-2xl">🔗</span>
+        <div className="flex-1 text-right">
+          <div className="font-black text-white text-lg">קישורים משפחתיים</div>
+          <div className="text-blue-200 text-xs mt-0.5">גישה מהירה לאתרים ושירותים חשובים</div>
+        </div>
+        {links.length > 0 && (
+          <span className="bg-white/20 text-white text-sm font-black px-2.5 py-1 rounded-full">{links.length}</span>
+        )}
+      </div>
+
+      <div className="p-5">
+        {/* Links grid */}
+        {!loading && links.length === 0 && (
+          <div className="text-center py-10 text-gray-400">
+            <div className="text-5xl mb-3">🔗</div>
+            <div className="font-bold text-base mb-1">אין קישורים עדיין</div>
+            <div className="text-sm">הוסף קישורים לאתרים שאתם משתמשים בהם לעתים קרובות</div>
+          </div>
+        )}
+        {links.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+            {links.map(link => (
+              <div key={link.id} className="group flex items-center gap-3 flex-row-reverse bg-gray-50 hover:bg-blue-50 rounded-2xl px-4 py-3 border border-gray-100 hover:border-blue-200 transition-all">
+                <div className="flex-shrink-0">
+                  {faviconOf(link.url)
+                    ? <img src={faviconOf(link.url)!} alt="" className="w-8 h-8 rounded-lg" onError={e => { (e.target as HTMLImageElement).style.display='none' }} />
+                    : <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-lg">🔗</div>
+                  }
+                </div>
+                <div className="flex-1 min-w-0 text-right">
+                  <a href={link.url} target="_blank" rel="noopener noreferrer"
+                    className="font-black text-gray-800 hover:text-blue-600 text-sm leading-snug block truncate transition-colors">
+                    {link.title}
+                  </a>
+                  <div className="text-xs text-gray-400 truncate">{hostOf(link.url)}</div>
+                </div>
+                <div className="flex gap-1.5 flex-shrink-0">
+                  <a href={link.url} target="_blank" rel="noopener noreferrer"
+                    className="w-8 h-8 rounded-xl bg-blue-600 hover:bg-blue-700 flex items-center justify-center text-white text-sm transition shadow-sm"
+                    title="פתח">↗</a>
+                  <button onClick={() => onDelete(link.id)}
+                    className="w-8 h-8 rounded-xl bg-gray-100 hover:bg-red-100 hover:text-red-500 flex items-center justify-center text-gray-400 text-sm transition opacity-0 group-hover:opacity-100"
+                    title="מחק">×</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add new link form */}
+        <div className="border-t border-gray-100 pt-4 space-y-2">
+          <div className="text-xs font-bold text-gray-400 text-right mb-2">➕ הוסף קישור</div>
+          <input type="text" value={newLinkTitle} onChange={e => onTitleChange(e.target.value)}
+            placeholder="שם הקישור (לדוג׳: יומן בי&quot;ס)" dir="rtl"
+            className="w-full border-2 border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 bg-white" />
+          <input type="url" value={newLinkUrl} onChange={e => onUrlChange(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && onAdd()}
+            placeholder="https://..." dir="ltr"
+            className="w-full border-2 border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 bg-white" />
+          <button onClick={onAdd} disabled={!newLinkTitle.trim() || !newLinkUrl.trim()}
+            className="w-full text-white font-black py-2.5 rounded-xl disabled:opacity-40 transition shadow-sm text-sm"
+            style={{ background: 'linear-gradient(135deg,#2563EB,#4F46E5)' }}>
+            ➕ הוסף קישור
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Standalone Reminders Panel ──────────────────────────────────────────────
+function RemindersPanel({ reminders, newVal, loading, onNewChange, onAdd, onToggle, onDelete }: {
+  reminders: Reminder[]; newVal: string; loading: boolean
+  onNewChange: (v: string) => void; onAdd: () => void
+  onToggle: (id: string, done: boolean) => void; onDelete: (id: string) => void
+}) {
+  const pending = reminders.filter(r => !r.completed)
+  const done    = reminders.filter(r => r.completed)
   return (
     <div className="mt-6 no-print">
       <div className="bg-white rounded-2xl shadow-md overflow-hidden border border-amber-100">
@@ -476,24 +721,57 @@ function RemindersPanel({ reminders, newVal, loading, onNewChange, onAdd, onDele
           style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
           <span className="text-lg">📋</span>
           <span className="font-black text-white text-sm flex-1 text-right">תזכורות</span>
-          {reminders.length > 0 && (
-            <span className="bg-white/30 text-white text-xs rounded-full w-6 h-6 flex items-center justify-center font-black">{reminders.length}</span>
-          )}
+          <div className="flex items-center gap-2">
+            {pending.length > 0 && (
+              <span className="bg-white/30 text-white text-xs rounded-full w-6 h-6 flex items-center justify-center font-black">{pending.length}</span>
+            )}
+            {done.length > 0 && (
+              <button onClick={() => done.forEach(r => onDelete(r.id))}
+                className="text-white/80 hover:text-white text-xs font-bold bg-white/20 hover:bg-white/30 px-2 py-0.5 rounded-full transition whitespace-nowrap">
+                שחרר ({done.length})
+              </button>
+            )}
+          </div>
         </div>
         <div className="px-4 py-3">
           {!loading && reminders.length === 0 && (
             <p className="text-sm text-center text-gray-300 py-1 mb-2">אין תזכורות</p>
           )}
-          <ul className="space-y-2 mb-3">
-            {reminders.map(r => (
-              <li key={r.id} className="flex items-center gap-2 flex-row-reverse">
-                <input type="checkbox" checked={false} onChange={() => onDelete(r.id)}
-                  className="w-4 h-4 cursor-pointer flex-shrink-0" style={{ accentColor: '#F59E0B' }} />
-                <span className="flex-1 text-sm text-right text-gray-700">{r.text}</span>
-                <button onClick={() => onDelete(r.id)} className="text-gray-300 hover:text-red-400 text-lg leading-none flex-shrink-0">×</button>
-              </li>
-            ))}
-          </ul>
+          {/* Pending reminders */}
+          {pending.length > 0 && (
+            <ul className="space-y-2 mb-2">
+              {pending.map(r => (
+                <li key={r.id} className="flex items-center gap-3 flex-row-reverse">
+                  <button onClick={() => onToggle(r.id, true)}
+                    className="w-7 h-7 rounded-full border-2 border-amber-300 flex items-center justify-center flex-shrink-0 hover:bg-amber-50 transition active:scale-95"
+                    style={{ minWidth: 28, minHeight: 28 }} title="סמן כבוצע">
+                    <span className="text-amber-400 text-sm">○</span>
+                  </button>
+                  <span className="flex-1 text-sm text-right text-gray-700">{r.text}</span>
+                  <button onClick={() => onDelete(r.id)} className="text-gray-300 hover:text-red-400 text-lg leading-none flex-shrink-0">×</button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {/* Done reminders — stay visible until manually released */}
+          {done.length > 0 && (
+            <>
+              {pending.length > 0 && <div className="border-t border-amber-100 my-2" />}
+              <ul className="space-y-1.5 mb-2">
+                {done.map(r => (
+                  <li key={r.id} className="flex items-center gap-3 flex-row-reverse opacity-50">
+                    <button onClick={() => onToggle(r.id, false)}
+                      className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition active:scale-95"
+                      style={{ minWidth: 28, minHeight: 28, background: '#F59E0B' }} title="בטל סימון">
+                      <span className="text-white text-sm">✓</span>
+                    </button>
+                    <span className="flex-1 text-sm text-right text-gray-400 line-through">{r.text}</span>
+                    <button onClick={() => onDelete(r.id)} className="text-gray-300 hover:text-red-400 text-base leading-none flex-shrink-0">×</button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           <div className="flex gap-2 flex-row-reverse">
             <input type="text" value={newVal} onChange={e => onNewChange(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && onAdd()}
@@ -509,10 +787,55 @@ function RemindersPanel({ reminders, newVal, loading, onNewChange, onAdd, onDele
   )
 }
 
+// ── BirthdayCountdown ──────────────────────────────────────────────────────
+function BirthdayCountdown({ birthdays }: { birthdays: Birthday[] }) {
+  if (birthdays.length === 0) return null
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const upcoming = birthdays
+    .map(b => {
+      const thisYear = new Date(today.getFullYear(), b.month - 1, b.day)
+      thisYear.setHours(0, 0, 0, 0)
+      if (thisYear < today) thisYear.setFullYear(today.getFullYear() + 1)
+      const diff = Math.round((thisYear.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+      return { ...b, daysUntil: diff }
+    })
+    .filter(b => b.daysUntil <= 30)
+    .sort((a, b) => a.daysUntil - b.daysUntil)
+
+  if (upcoming.length === 0) return null
+
+  const PILL_COLORS = [
+    { bg: '#FEE2E2', text: '#991B1B' },
+    { bg: '#FEF3C7', text: '#92400E' },
+    { bg: '#D1FAE5', text: '#065F46' },
+    { bg: '#DBEAFE', text: '#1E3A8A' },
+    { bg: '#EDE9FE', text: '#4C1D95' },
+  ]
+
+  return (
+    <div className="px-4 pb-2 flex flex-wrap gap-1.5 flex-row-reverse">
+      {upcoming.map((b, i) => {
+        const colors = PILL_COLORS[i % PILL_COLORS.length]
+        return (
+          <span key={b.id} className="flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full"
+            style={{ background: colors.bg, color: colors.text }}>
+            <span>{b.emoji}</span>
+            <span>{b.name}</span>
+            <span>{b.daysUntil === 0 ? '— היום! 🎉' : `— בעוד ${b.daysUntil} ימים`}</span>
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────
 export default function KidsSchedulePage() {
   const [selectedDate, setSelectedDate] = useState(() => new Date())
-  const [activeTab, setActiveTab] = useState<TabKey>('family')
+  const [activeTab, setActiveTab] = useState<TabKey>('kids')
   const [events, setEvents] = useState<Event[]>([])
 
   // Standalone reminders — not tied to any date or person
@@ -525,6 +848,13 @@ export default function KidsSchedulePage() {
   const [newGrocery, setNewGrocery] = useState('')
   const [loadingGroceries, setLoadingGroceries] = useState(true)
 
+  // Family links
+  interface FamilyLink { id: string; title: string; url: string }
+  const [links, setLinks] = useState<FamilyLink[]>([])
+  const [newLinkTitle, setNewLinkTitle] = useState('')
+  const [newLinkUrl, setNewLinkUrl] = useState('')
+  const [loadingLinks, setLoadingLinks] = useState(true)
+
   const [loadingEvents, setLoadingEvents] = useState(true)
   const [kidThemeIdx, setKidThemeIdx] = useState<Record<string,number>>({ami:0,alex:0,itan:0})
   const [showVideoModal, setShowVideoModal] = useState(false)
@@ -533,23 +863,31 @@ export default function KidsSchedulePage() {
   const [showModal, setShowModal] = useState(false)
   const [editingEvent, setEditingEvent] = useState<Event|null>(null)
   const [savingEvent, setSavingEvent] = useState(false)
+  const [dupWarning, setDupWarning] = useState<DupWarning[] | null>(null)
   const emptyForm = useCallback((person = ''): EventForm => ({
     title:'', persons: person ? [person] : [], date: format(selectedDate,'yyyy-MM-dd'),
     start_time:'', end_time:'', location:'', notes:'',
-    is_recurring: false, recurrence_days: [], meeting_link:''
+    is_recurring: false, recurrence_days: [], meeting_link:'', attachment_url:''
   }), [selectedDate])
   const [eventForm, setEventForm] = useState<EventForm>(() => emptyForm())
 
-  // Dashboard / AI insights
+  // Birthdays
+  const [birthdays, setBirthdays] = useState<Birthday[]>([])
+  const [showBirthdaysModal, setShowBirthdaysModal] = useState(false)
+  const [newBirthday, setNewBirthday] = useState({ name: '', month: '', day: '', birth_year: '', type: 'birthday', emoji: '🎂', notes: '' })
+
+  // Reactions — keyed by event_id
+  const [reactions, setReactions] = useState<Record<string, { person: string; emoji: string }[]>>({})
+
   // Weekly view events
   const [weekEvents, setWeekEvents] = useState<Event[]>([])
   const [loadingWeek, setLoadingWeek] = useState(false)
   const [loadedWeekStart, setLoadedWeekStart] = useState('')
 
-  const [dashStats, setDashStats] = useState<any>(null)
-  const [dashInsights, setDashInsights] = useState<any[]>([])
-  const [loadingDash, setLoadingDash] = useState(false)
-  const [dashWeekDate, setDashWeekDate] = useState('')
+  // Rest-of-week view
+  const [restWeekMode, setRestWeekMode] = useState(false)
+  const [restWeekEvents, setRestWeekEvents] = useState<Event[]>([])
+  const [loadingRestWeek, setLoadingRestWeek] = useState(false)
 
   const dateStr = format(selectedDate, 'yyyy-MM-dd')
   const dayOfWeek = DAY_NAMES[selectedDate.getDay()]
@@ -557,11 +895,35 @@ export default function KidsSchedulePage() {
   const cycleTheme = (key: string) =>
     setKidThemeIdx(prev => ({ ...prev, [key]: (prev[key] + 1) % 3 }))
 
+  const loadBirthdays = useCallback(async () => {
+    try {
+      const res = await fetch('/api/birthdays')
+      if (res.ok) setBirthdays(await res.json())
+    } catch { /* ignore */ }
+  }, [])
+
   const loadEvents = useCallback(async () => {
     setLoadingEvents(true)
     try {
       const res = await fetch(`/api/events?start=${dateStr}&end=${dateStr}&include_recurring=true`)
-      if (res.ok) setEvents(await res.json())
+      if (res.ok) {
+        const data: Event[] = await res.json()
+        setEvents(data)
+        // Batch-fetch reactions for all loaded events
+        const ids = data.map(e => e.id)
+        if (ids.length) {
+          const rRes = await fetch(`/api/reactions?event_ids=${ids.join(',')}`)
+          if (rRes.ok) {
+            const rData: { event_id: string; person: string; emoji: string }[] = await rRes.json()
+            const grouped: Record<string, { person: string; emoji: string }[]> = {}
+            for (const r of rData) {
+              if (!grouped[r.event_id]) grouped[r.event_id] = []
+              grouped[r.event_id].push({ person: r.person, emoji: r.emoji })
+            }
+            setReactions(grouped)
+          }
+        }
+      }
     } finally { setLoadingEvents(false) }
   }, [dateStr])
 
@@ -583,6 +945,21 @@ export default function KidsSchedulePage() {
     } finally { setLoadingGroceries(false) }
   }, [])
 
+  // Load family links (stored in reminders with person='__link__', text='title||url')
+  const loadLinks = useCallback(async () => {
+    setLoadingLinks(true)
+    try {
+      const res = await fetch('/api/reminders?links=true')
+      if (res.ok) {
+        const raw: Reminder[] = await res.json()
+        setLinks(raw.map(r => {
+          const [title, ...urlParts] = r.text.split('||')
+          return { id: r.id, title: title || r.text, url: urlParts.join('||') || '' }
+        }))
+      }
+    } finally { setLoadingLinks(false) }
+  }, [])
+
   const loadWeekEvents = useCallback(async () => {
     const weekDates = getWeekDates(selectedDate)
     const startStr = format(weekDates[0], 'yyyy-MM-dd')
@@ -595,27 +972,35 @@ export default function KidsSchedulePage() {
     } finally { setLoadingWeek(false) }
   }, [selectedDate, loadedWeekStart])
 
-  const loadDashboard = useCallback(async (dateOverride?: string) => {
-    setLoadingDash(true)
+  // Compute remaining days from today to Thursday (inclusive), excluding past days
+  function getRestOfWeekDates(): Date[] {
+    const today = new Date(); today.setHours(0,0,0,0)
+    const THURSDAY = 4 // 0=Sun … 6=Sat
+    const days: Date[] = []
+    for (let d = new Date(today); d.getDay() !== 5 /* Fri */; d = addDays(d, 1)) {
+      if (d >= today && d.getDay() <= THURSDAY) days.push(new Date(d))
+      if (d.getDay() === THURSDAY) break // stop at Thursday
+    }
+    return days
+  }
+
+  async function loadRestWeekEvents() {
+    const dates = getRestOfWeekDates()
+    if (!dates.length) return
+    setLoadingRestWeek(true)
     try {
-      const d = dateOverride || dateStr
-      const res = await fetch(`/api/insights?date=${d}`)
-      if (res.ok) {
-        const data = await res.json()
-        setDashStats(data.stats)
-        setDashInsights(data.insights)
-        setDashWeekDate(d)
-      }
-    } finally { setLoadingDash(false) }
-  }, [dateStr])
+      const start = format(dates[0], 'yyyy-MM-dd')
+      const end   = format(dates[dates.length - 1], 'yyyy-MM-dd')
+      const res = await fetch(`/api/events?include_recurring=true&start=${start}&end=${end}`)
+      if (res.ok) setRestWeekEvents(await res.json())
+    } finally { setLoadingRestWeek(false) }
+  }
 
   useEffect(() => { loadEvents() }, [loadEvents])
   useEffect(() => { loadReminders() }, [loadReminders])
   useEffect(() => { loadGroceries() }, [loadGroceries])
-
-  useEffect(() => {
-    if (activeTab === 'stats') loadDashboard()
-  }, [activeTab]) // eslint-disable-line
+  useEffect(() => { loadLinks() }, [loadLinks])
+  useEffect(() => { loadBirthdays() }, [loadBirthdays])
 
   useEffect(() => {
     if (activeTab === 'week') { setLoadedWeekStart(''); }
@@ -636,12 +1021,32 @@ export default function KidsSchedulePage() {
       start_time: event.start_time||'', end_time: event.end_time||'',
       location: event.location||'', notes: event.notes||'',
       is_recurring: event.is_recurring, recurrence_days: event.recurrence_days||[],
-      meeting_link: event.meeting_link||''
+      meeting_link: event.meeting_link||'',
+      attachment_url: event.attachment_url||''
     })
     setShowModal(true)
   }
-  async function saveEvent() {
+  async function saveEvent(force = false) {
     if (!eventForm.title.trim() || !eventForm.persons.length) return
+
+    // ── Duplicate check (new events only, skip when editing or force-saving) ─
+    if (!force && !editingEvent) {
+      const dups: DupWarning[] = []
+      for (const person of eventForm.persons) {
+        const existing = events.find(e =>
+          e.person === person &&
+          (eventForm.is_recurring || e.date === eventForm.date) &&
+          titlesSimilar(e.title, eventForm.title)
+        )
+        if (existing) dups.push({ person, existingTitle: existing.title })
+      }
+      if (dups.length > 0) {
+        setDupWarning(dups)
+        return  // pause — wait for user to confirm or cancel
+      }
+    }
+
+    setDupWarning(null)
     setSavingEvent(true)
     try {
       const basePayload = {
@@ -649,6 +1054,7 @@ export default function KidsSchedulePage() {
         start_time: eventForm.start_time||null, end_time: eventForm.end_time||null,
         location: eventForm.location||null, notes: eventForm.notes||null,
         meeting_link: eventForm.meeting_link||null,
+        attachment_url: eventForm.attachment_url||null,
         is_recurring: eventForm.is_recurring,
         recurrence_days: eventForm.is_recurring ? eventForm.recurrence_days : null,
       }
@@ -662,7 +1068,7 @@ export default function KidsSchedulePage() {
         const created: Event[] = []
         for (const person of eventForm.persons) {
           const res = await fetch('/api/events', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ ...basePayload, person }) })
-          if (res.ok) { const c = await res.json(); if (!c.duplicate) created.push(c) }
+          if (res.ok) { const c = await res.json(); if (c.id) created.push(c) }
         }
         setEvents(prev => [...prev, ...created])
       }
@@ -684,6 +1090,10 @@ export default function KidsSchedulePage() {
     const res = await fetch('/api/reminders', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ date: format(new Date(),'yyyy-MM-dd'), person: null, text, completed: false }) })
     if (res.ok) { const data = await res.json(); setReminders(prev => [...prev, data]); setNewReminder('') }
+  }
+  async function toggleReminder(id: string, done: boolean) {
+    setReminders(prev => prev.map(r => r.id===id ? {...r, completed: done} : r))
+    await fetch(`/api/reminders?id=${id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ completed: done }) })
   }
   async function deleteReminder(id: string) {
     setReminders(prev => prev.filter(r => r.id!==id))
@@ -709,6 +1119,64 @@ export default function KidsSchedulePage() {
     const done = groceries.filter(g => g.completed)
     setGroceries(prev => prev.filter(g => !g.completed))
     await Promise.all(done.map(g => fetch(`/api/reminders?id=${g.id}`, { method:'DELETE' })))
+  }
+
+  // Links CRUD
+  async function addLink() {
+    const title = newLinkTitle.trim(); const url = newLinkUrl.trim()
+    if (!title || !url) return
+    const res = await fetch('/api/reminders', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ date: format(new Date(),'yyyy-MM-dd'), person: '__link__', text: `${title}||${url}`, completed: false }) })
+    if (res.ok) {
+      const data = await res.json()
+      setLinks(prev => [...prev, { id: data.id, title, url }])
+      setNewLinkTitle(''); setNewLinkUrl('')
+    }
+  }
+  async function deleteLink(id: string) {
+    setLinks(prev => prev.filter(l => l.id !== id))
+    await fetch(`/api/reminders?id=${id}`, { method:'DELETE' })
+  }
+
+  // Birthdays CRUD
+  async function addBirthday() {
+    const { name, month, day, birth_year, type, emoji, notes } = newBirthday
+    if (!name.trim() || !month || !day) return
+    const res = await fetch('/api/birthdays', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), month: Number(month), day: Number(day), birth_year: birth_year ? Number(birth_year) : null, type, emoji, notes: notes||null })
+    })
+    if (res.ok) {
+      const data = await res.json()
+      setBirthdays(prev => [...prev, data])
+      setNewBirthday({ name: '', month: '', day: '', birth_year: '', type: 'birthday', emoji: '🎂', notes: '' })
+    }
+  }
+  async function deleteBirthday(id: string) {
+    setBirthdays(prev => prev.filter(b => b.id !== id))
+    await fetch(`/api/birthdays?id=${id}`, { method: 'DELETE' })
+  }
+
+  // Reactions
+  async function toggleReaction(eventId: string, emoji: string) {
+    const person = activeTab === 'assaf' || activeTab === 'danil' ? activeTab : 'assaf'
+    // Optimistic update
+    setReactions(prev => {
+      const current = prev[eventId] || []
+      const exists = current.some(r => r.person === person && r.emoji === emoji)
+      const updated = exists
+        ? current.filter(r => !(r.person === person && r.emoji === emoji))
+        : [...current, { person, emoji }]
+      return { ...prev, [eventId]: updated }
+    })
+    try {
+      await fetch('/api/reactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event_id: eventId, person, emoji })
+      })
+    } catch { /* ignore — optimistic is fine */ }
   }
 
   // Helpers
@@ -751,12 +1219,106 @@ export default function KidsSchedulePage() {
 
       {showModal && (
         <EventModal form={eventForm} editing={!!editingEvent}
-          onClose={() => setShowModal(false)} onSave={saveEvent}
-          onChange={patch => setEventForm(prev => ({ ...prev, ...patch }))} />
+          onClose={() => { setShowModal(false); setDupWarning(null) }}
+          onSave={() => saveEvent(false)}
+          onSaveAnyway={() => saveEvent(true)}
+          onChange={patch => { setEventForm(prev => ({ ...prev, ...patch })); setDupWarning(null) }}
+          dupWarning={dupWarning} />
       )}
 
       {showVideoModal && (
         <VideoSummaryModal onClose={() => setShowVideoModal(false)} />
+      )}
+
+      {/* ── BIRTHDAYS MODAL ─────────────────────────────────────────── */}
+      {showBirthdaysModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" dir="rtl">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-xl font-black text-gray-900">🎂 ימי הולדת ויום שנה</h2>
+              <button onClick={() => setShowBirthdaysModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              {/* Existing birthdays list */}
+              {birthdays.length === 0 ? (
+                <div className="text-center py-6 text-gray-400 text-sm">אין ימי הולדת עדיין</div>
+              ) : (
+                <div className="space-y-2">
+                  {birthdays.map(b => {
+                    const today = new Date(); today.setHours(0,0,0,0)
+                    const next = new Date(today.getFullYear(), b.month - 1, b.day); next.setHours(0,0,0,0)
+                    if (next < today) next.setFullYear(today.getFullYear() + 1)
+                    const daysUntil = Math.round((next.getTime() - today.getTime()) / (1000*60*60*24))
+                    return (
+                      <div key={b.id} className="flex items-center gap-3 flex-row-reverse bg-gray-50 rounded-2xl px-4 py-3">
+                        <span className="text-2xl">{b.emoji}</span>
+                        <div className="flex-1 text-right">
+                          <div className="font-black text-gray-800">{b.name}</div>
+                          <div className="text-xs text-gray-500">
+                            {b.day}/{b.month}{b.birth_year ? `/${b.birth_year}` : ''} •{' '}
+                            {b.type === 'birthday' ? 'יום הולדת' : b.type === 'anniversary' ? 'יום שנה' : 'אחר'}
+                            {daysUntil === 0 ? ' • 🎉 היום!' : ` • בעוד ${daysUntil} ימים`}
+                          </div>
+                          {b.notes && <div className="text-xs text-gray-400 mt-0.5">{b.notes}</div>}
+                        </div>
+                        <button onClick={() => deleteBirthday(b.id)}
+                          className="text-gray-300 hover:text-red-400 text-lg leading-none flex-shrink-0">×</button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              {/* Add form */}
+              <div className="border-t border-gray-100 pt-4 space-y-3">
+                <div className="text-xs font-black text-gray-500 text-right mb-1">➕ הוסף</div>
+                <input type="text" value={newBirthday.name} onChange={e => setNewBirthday(p => ({...p, name: e.target.value}))}
+                  placeholder="שם..." className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 text-right" />
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1 text-right">יום</label>
+                    <input type="number" min={1} max={31} value={newBirthday.day} onChange={e => setNewBirthday(p => ({...p, day: e.target.value}))}
+                      placeholder="יום" className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 text-center" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1 text-right">חודש</label>
+                    <input type="number" min={1} max={12} value={newBirthday.month} onChange={e => setNewBirthday(p => ({...p, month: e.target.value}))}
+                      placeholder="חודש" className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 text-center" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1 text-right">שנה (אופציונלי)</label>
+                    <input type="number" min={1900} max={2030} value={newBirthday.birth_year} onChange={e => setNewBirthday(p => ({...p, birth_year: e.target.value}))}
+                      placeholder="שנה" className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 text-center" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1 text-right">סוג</label>
+                    <select value={newBirthday.type} onChange={e => setNewBirthday(p => ({...p, type: e.target.value}))}
+                      className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 text-right">
+                      <option value="birthday">יום הולדת</option>
+                      <option value="anniversary">יום שנה</option>
+                      <option value="other">אחר</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1 text-right">אמוג׳י</label>
+                    <input type="text" value={newBirthday.emoji} onChange={e => setNewBirthday(p => ({...p, emoji: e.target.value}))}
+                      className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 text-center" />
+                  </div>
+                </div>
+                <textarea value={newBirthday.notes} onChange={e => setNewBirthday(p => ({...p, notes: e.target.value}))}
+                  placeholder="הערות (אופציונלי)..." rows={2}
+                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 text-right resize-none" />
+                <button onClick={addBirthday}
+                  disabled={!newBirthday.name.trim() || !newBirthday.month || !newBirthday.day}
+                  className="w-full bg-pink-500 hover:bg-pink-600 disabled:opacity-40 text-white font-black py-2.5 rounded-2xl transition shadow-md text-sm">
+                  🎂 הוסף
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── PRINT (weekly) ─────────────────────────────────────────────── */}
@@ -879,15 +1441,22 @@ export default function KidsSchedulePage() {
             <div className="flex items-center gap-2">
               {/* Primary: Add via inbox */}
               <a href="/inbox"
-                className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition whitespace-nowrap shadow-lg shadow-emerald-500/30">
-                ✚ <span className="hidden xs:inline">הכנס</span>
+                className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-white font-black px-5 py-3 rounded-2xl transition whitespace-nowrap shadow-lg shadow-emerald-500/40 text-base">
+                ✚ הכנס נתונים
               </a>
               {/* Add event directly */}
               <button
-                onClick={() => openAddEvent(activeTab !== 'kids' && activeTab !== 'family' && activeTab !== 'stats' && activeTab !== 'week' ? activeTab : '')}
-                className="flex items-center gap-1 bg-blue-500/80 hover:bg-blue-400/80 active:bg-blue-600/80 text-white text-sm font-bold px-3 py-2.5 rounded-xl transition whitespace-nowrap"
+                onClick={() => openAddEvent(['assaf','danil','ami','alex','itan'].includes(activeTab) ? activeTab : '')}
+                className="flex items-center gap-1.5 bg-blue-500/80 hover:bg-blue-400/80 active:bg-blue-600/80 text-white font-black px-4 py-3 rounded-2xl transition whitespace-nowrap text-base"
                 title="הוסף אירוע">
-                ➕
+                ➕ אירוע
+              </button>
+              {/* Birthdays */}
+              <button
+                onClick={() => setShowBirthdaysModal(true)}
+                className="bg-pink-500/80 hover:bg-pink-400/80 active:bg-pink-600/80 text-white text-sm font-bold px-3 py-2.5 rounded-xl transition"
+                title="ימי הולדת">
+                🎂
               </button>
               {/* AI video */}
               <button
@@ -931,20 +1500,27 @@ export default function KidsSchedulePage() {
             <div className="flex items-center gap-1.5 justify-center">
               <button onClick={() => setSelectedDate(d => subDays(d, 1))}
                 className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/30 flex items-center justify-center text-white font-bold text-lg transition">‹</button>
-              <button onClick={() => setSelectedDate(new Date())}
+              <button onClick={() => { setSelectedDate(new Date()); setRestWeekMode(false) }}
                 className="flex-1 h-10 font-bold bg-amber-500/80 hover:bg-amber-400/80 active:bg-amber-600/80 text-white text-sm rounded-xl transition whitespace-nowrap max-w-[72px]">
                 היום
               </button>
-              <button onClick={() => setSelectedDate(addDays(new Date(), 1))}
+              <button onClick={() => { setSelectedDate(addDays(new Date(), 1)); setRestWeekMode(false) }}
                 className="flex-1 h-10 font-bold bg-sky-500/70 hover:bg-sky-400/70 active:bg-sky-600/70 text-white text-sm rounded-xl transition whitespace-nowrap max-w-[72px]">
                 מחר
               </button>
-              <input type="date" value={dateStr} onChange={e => setSelectedDate(new Date(e.target.value + 'T12:00:00'))}
+              <button onClick={() => { setRestWeekMode(true); loadRestWeekEvents() }}
+                className={`flex-1 h-10 font-bold text-white text-xs rounded-xl transition whitespace-nowrap max-w-[80px] ${restWeekMode ? 'bg-violet-600/90 ring-2 ring-white/40' : 'bg-violet-500/70 hover:bg-violet-400/70 active:bg-violet-600/70'}`}>
+                שאר השבוע
+              </button>
+              <input type="date" value={dateStr} onChange={e => { setSelectedDate(new Date(e.target.value + 'T12:00:00')); setRestWeekMode(false) }}
                 className="bg-white/10 border border-white/20 text-white text-xs rounded-xl px-2 h-10 focus:outline-none focus:ring-2 focus:ring-white/40 w-[110px]" />
               <button onClick={() => setSelectedDate(d => addDays(d, 1))}
                 className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/30 flex items-center justify-center text-white font-bold text-lg transition">›</button>
             </div>
           </div>
+
+          {/* Birthday countdown pills */}
+          <BirthdayCountdown birthdays={birthdays} />
 
           {/* Separator */}
           <div className="mx-4 h-px bg-white/10" />
@@ -964,8 +1540,91 @@ export default function KidsSchedulePage() {
           </div>
         </div>
 
+        {/* ── REST-OF-WEEK VIEW ──────────────────────────────────────── */}
+        {restWeekMode && (activeTab === 'family' || activeTab === 'kids') && (() => {
+          const rwDates = getRestOfWeekDates()
+          const HE_DAY_NAMES: Record<number,string> = { 0:'ראשון', 1:'שני', 2:'שלישי', 3:'רביעי', 4:'חמישי' }
+          const todayStr = format(new Date(), 'yyyy-MM-dd')
+          return (
+            <div className="max-w-5xl mx-auto">
+              <div className="flex items-center justify-between mb-4 flex-row-reverse">
+                <h2 className="font-black text-white text-xl">📅 שארית השבוע</h2>
+                <button onClick={() => setRestWeekMode(false)}
+                  className="text-white/70 hover:text-white text-sm font-bold bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-xl transition">
+                  ← חזור
+                </button>
+              </div>
+              {loadingRestWeek ? (
+                <div className="text-center py-12 text-white/60 text-lg">⏳ טוען...</div>
+              ) : rwDates.length === 0 ? (
+                <div className="text-center py-16 bg-white/10 rounded-3xl">
+                  <div className="text-5xl mb-3">🏖️</div>
+                  <div className="text-white font-black text-xl">אין ימים שנותרו השבוע עד יום חמישי</div>
+                  <div className="text-white/60 mt-1">שבת שלום!</div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {rwDates.map(d => {
+                    const dStr = format(d, 'yyyy-MM-dd')
+                    const isToday = dStr === todayStr
+                    const dayName = HE_DAY_NAMES[d.getDay()] || ''
+                    const dayEvs = restWeekEvents.filter(e => {
+                      if (e.is_recurring && e.recurrence_days) return e.recurrence_days.includes(DAY_NAMES[d.getDay()])
+                      return e.date === dStr
+                    })
+                    const byPerson = FAMILY_PEOPLE.reduce((acc, p) => {
+                      acc[p.key] = dayEvs.filter(e => e.person === p.key)
+                      return acc
+                    }, {} as Record<string, Event[]>)
+                    return (
+                      <div key={dStr}
+                        className={`rounded-3xl overflow-hidden shadow-lg border-2 transition-all ${isToday ? 'border-amber-400 shadow-amber-500/30' : 'border-white/10'}`}
+                        style={{ background: isToday ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.10)' }}>
+                        {/* Day header */}
+                        <div className={`px-4 py-3 flex items-center justify-between flex-row-reverse ${isToday ? 'bg-amber-500/30' : 'bg-white/5'}`}>
+                          <div className="text-right">
+                            <div className="font-black text-white text-base">{isToday ? '⭐ היום' : `יום ${dayName}`}</div>
+                            <div className="text-white/60 text-xs">{format(d, 'd בMMMM', { locale: he })}</div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="bg-white/20 text-white text-xs font-black px-2 py-0.5 rounded-full">{dayEvs.length} אירועים</span>
+                            <button onClick={() => { setRestWeekMode(false); setSelectedDate(d) }}
+                              className="text-white/60 hover:text-white text-xs bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-full transition">
+                              פתח
+                            </button>
+                          </div>
+                        </div>
+                        {/* Events by person */}
+                        <div className="px-3 py-2 space-y-1.5">
+                          {dayEvs.length === 0 ? (
+                            <div className="text-center py-3 text-white/30 text-sm">🎉 יום פנוי</div>
+                          ) : FAMILY_PEOPLE.filter(p => byPerson[p.key].length > 0).map(p => (
+                            <div key={p.key}>
+                              {byPerson[p.key].map(ev => (
+                                <div key={ev.id} className="flex items-center gap-2 flex-row-reverse py-1 px-2 rounded-xl"
+                                  style={{ background: p.color+'18' }}>
+                                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-black text-white"
+                                    style={{ background: p.color }}>{p.name[0]}</div>
+                                  <div className="flex-1 text-right">
+                                    <span className={`text-sm font-bold text-white ${ev.completed ? 'line-through opacity-50' : ''}`}>{ev.title}</span>
+                                    {ev.start_time && <span className="text-xs text-white/50 mr-1.5">{ev.start_time.slice(0,5)}</span>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
         {/* ── FAMILY TAB ─────────────────────────────────────────────── */}
-        {activeTab === 'family' && (
+        {!restWeekMode && activeTab === 'family' && (
           <div className="max-w-4xl mx-auto">
             <div className="bg-white rounded-3xl shadow-lg overflow-hidden border border-gray-100">
               {FAMILY_PEOPLE.map((person, idx) => {
@@ -1131,7 +1790,7 @@ export default function KidsSchedulePage() {
         })()}
 
         {/* ── KIDS TAB ───────────────────────────────────────────────── */}
-        {activeTab === 'kids' && (
+        {!restWeekMode && activeTab === 'kids' && (
           loadingEvents ? <div className="text-center py-16 text-gray-400 text-xl">⏳ טוען...</div> : (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {KIDS.map(kid => {
@@ -1152,7 +1811,7 @@ export default function KidsSchedulePage() {
                     </div>
                     <div className="flex-1 px-3 pt-3 pb-3">
                       {evs.length===0 ? <div className="text-center py-8 text-4xl opacity-30">🎈</div>
-                      : evs.map(ev => <EventCard key={ev.id} event={ev} theme={theme} onToggle={toggleEvent} onDelete={deleteEvent} onEdit={openEditEvent} />)}
+                      : evs.map(ev => <EventCard key={ev.id} event={ev} theme={theme} onToggle={toggleEvent} onDelete={deleteEvent} onEdit={openEditEvent} reactions={reactions[ev.id]||[]} onReact={emoji => toggleReaction(ev.id, emoji)} />)}
                     </div>
                   </div>
                 )
@@ -1182,192 +1841,20 @@ export default function KidsSchedulePage() {
                 <div className="flex-1 px-4 pt-4 pb-4">
                   {loadingEvents ? <div className="text-center py-8 text-gray-400">⏳ טוען...</div>
                   : evs.length===0 ? <div className="text-center py-10 text-5xl opacity-20">✨</div>
-                  : evs.map(ev => <EventCard key={ev.id} event={ev} theme={theme} onToggle={toggleEvent} onDelete={deleteEvent} onEdit={openEditEvent} />)}
+                  : evs.map(ev => <EventCard key={ev.id} event={ev} theme={theme} onToggle={toggleEvent} onDelete={deleteEvent} onEdit={openEditEvent} reactions={reactions[ev.id]||[]} onReact={emoji => toggleReaction(ev.id, emoji)} />)}
                 </div>
               </div>
             </div>
           )
         })()}
 
-        {/* ── STATS / AI DASHBOARD ───────────────────────────────────── */}
-        {activeTab === 'stats' && (
-          <div className="max-w-5xl mx-auto">
-            {/* Dashboard header */}
-            <div className="rounded-3xl mb-5 px-6 py-5 shadow-md flex items-center justify-between flex-row-reverse"
-              style={{ background: 'linear-gradient(135deg,#0f172a,#1e3a5f,#0f172a)' }}>
-              <div className="text-right">
-                <div className="text-2xl font-black text-white">📊 תובנות AI — משפחת אלוני</div>
-                <div className="text-blue-200 text-sm mt-1">
-                  {dashStats ? `שבוע ${dashStats.weekDates?.[0]} עד ${dashStats.weekDates?.[6]}` : 'טוען נתוני שבוע...'}
-                </div>
-              </div>
-              <button onClick={() => loadDashboard(dateStr)}
-                disabled={loadingDash}
-                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl text-sm transition flex items-center gap-2">
-                {loadingDash ? <><span className="animate-spin">⏳</span> מנתח...</> : '🔄 רענן'}
-              </button>
-            </div>
-
-            {loadingDash && !dashStats && (
-              <div className="text-center py-20">
-                <div className="text-5xl mb-4 animate-bounce">🤖</div>
-                <div className="text-xl font-bold text-gray-600">Claude מנתח את לוח הזמנים...</div>
-                <div className="text-sm text-gray-400 mt-2">מחפש קשרים ותובנות</div>
-              </div>
-            )}
-
-            {dashStats && (
-              <>
-                {/* Stats cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-                  {[
-                    { icon: '📋', label: 'אירועים השבוע', value: dashStats.totalEvents, color: '#3B82F6' },
-                    { icon: '🏆', label: 'הכי עסוק', value: dashStats.busiestPerson ? (PERSON_NAMES[dashStats.busiestPerson]||dashStats.busiestPerson) : '—', color: PERSON_COLORS[dashStats.busiestPerson]||'#6B7280' },
-                    { icon: '📅', label: 'יום הכי עמוס', value: dashStats.busiestDay ? HE_DAYS_FULL[DAY_NAMES[new Date(dashStats.busiestDay+'T12:00:00').getDay()]] : '—', color: '#F59E0B' },
-                    { icon: '😴', label: 'ימים ריקים', value: dashStats.freeDays?.length ?? 0, color: '#10B981' },
-                  ].map((card, i) => (
-                    <div key={i} className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100 text-center">
-                      <div className="text-2xl mb-1">{card.icon}</div>
-                      <div className="text-xs text-gray-400 mb-1">{card.label}</div>
-                      <div className="text-xl font-black" style={{ color: card.color }}>{card.value}</div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
-                  {/* Weekly heatmap */}
-                  <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-4">
-                    <h3 className="font-black text-gray-700 text-base mb-3 text-right">🗓️ מפת חום שבועית</h3>
-                    {dashStats.weekDates && (
-                      <div style={{ direction: 'ltr' }}>
-                        {/* Day headers */}
-                        <div className="flex gap-1 mb-1">
-                          <div className="w-16 flex-shrink-0" />
-                          {dashStats.weekDates.map((d: string) => (
-                            <div key={d} className="flex-1 text-center text-xs font-bold text-gray-400">
-                              {HE_DAYS[DAY_NAMES[new Date(d+'T12:00:00').getDay()]]}
-                              <div className="text-gray-300 font-normal">{new Date(d+'T12:00:00').getDate()}</div>
-                            </div>
-                          ))}
-                        </div>
-                        {/* Person rows */}
-                        {['ami','alex','itan','assaf','danil'].map(personKey => {
-                          const fp = FAMILY_PEOPLE.find(p => p.key===personKey)!
-                          return (
-                            <div key={personKey} className="flex gap-1 mb-1 items-center">
-                              <div className="w-16 flex-shrink-0 flex items-center gap-1.5">
-                                {fp.photo
-                                  ? <img src={fp.photo} alt={fp.name} className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
-                                  : <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs flex-shrink-0" style={{ background: fp.color+'22' }}>{fp.emoji}</div>
-                                }
-                                <span className="text-xs font-bold text-gray-600 truncate">{fp.name}</span>
-                              </div>
-                              {dashStats.weekDates.map((d: string) => {
-                                const cellEvs = dashStats.grid?.[personKey]?.[d] || []
-                                const count = cellEvs.length
-                                const { bg, text } = heatmapColor(personKey, count)
-                                return (
-                                  <div key={d} className="flex-1 h-8 rounded-lg flex items-center justify-center text-xs font-black transition-all cursor-default"
-                                    style={{ background: bg, color: count > 0 ? '#fff' : text }}
-                                    title={cellEvs.map((e:any) => e.title).join(', ') || 'אין אירועים'}>
-                                    {count > 0 ? count : ''}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )
-                        })}
-                        {/* Legend */}
-                        <div className="flex items-center gap-2 mt-3 justify-end">
-                          <span className="text-xs text-gray-400">מעט</span>
-                          {[1,2,3,4].map(n => (
-                            <div key={n} className="w-5 h-5 rounded" style={{ background: `#3B82F6${['33','66','99','cc'][n-1]}` }} />
-                          ))}
-                          <span className="text-xs text-gray-400">הרבה</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Per-person totals */}
-                  <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-4">
-                    <h3 className="font-black text-gray-700 text-base mb-3 text-right">👥 עומס לפי אדם</h3>
-                    {dashStats.personTotals && (
-                      <div className="space-y-3">
-                        {FAMILY_PEOPLE.map(fp => {
-                          const total = dashStats.personTotals[fp.key] || 0
-                          const max = Math.max(...Object.values(dashStats.personTotals as Record<string,number>)) || 1
-                          return (
-                            <div key={fp.key} className="flex items-center gap-3 flex-row-reverse">
-                              <div className="w-16 text-right flex-shrink-0">
-                                {fp.photo
-                                  ? <img src={fp.photo} alt={fp.name} className="w-8 h-8 rounded-full object-cover inline-block ml-1" />
-                                  : <span className="text-lg">{fp.emoji}</span>
-                                }
-                                <span className="text-xs font-black" style={{ color: fp.color }}>{fp.name}</span>
-                              </div>
-                              <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
-                                <div className="h-full rounded-full transition-all flex items-center justify-end pr-2"
-                                  style={{ width: `${(total/max)*100}%`, background: fp.color, minWidth: total>0?'32px':'0' }}>
-                                  {total > 0 && <span className="text-white text-xs font-black">{total}</span>}
-                                </div>
-                              </div>
-                              {total === 0 && <span className="text-xs text-gray-400 flex-shrink-0">חופשי</span>}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* AI Insights */}
-                <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5 mb-5">
-                  <div className="flex items-center gap-2 flex-row-reverse mb-4">
-                    <h3 className="font-black text-gray-700 text-base">🤖 תובנות של Claude AI</h3>
-                    {loadingDash && <span className="text-xs text-blue-500 animate-pulse">מנתח...</span>}
-                  </div>
-                  {dashInsights.length === 0 && !loadingDash ? (
-                    <div className="text-center text-gray-400 py-4">
-                      <div className="text-3xl mb-2">🔍</div>
-                      <div className="text-sm">לחץ רענן כדי לקבל תובנות AI</div>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {dashInsights.map((insight: any, i: number) => {
-                        const style = INSIGHT_STYLES[insight.type] || INSIGHT_STYLES.info
-                        return (
-                          <div key={i} className="rounded-2xl p-4 border" style={{ background: style.bg, borderColor: style.border }}>
-                            <div className="flex items-start gap-2 flex-row-reverse">
-                              <div className="w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0"
-                                style={{ background: style.dot + '22' }}>{insight.icon}</div>
-                              <div className="flex-1 text-right">
-                                <div className="font-black text-sm mb-1" style={{ color: style.titleColor }}>{insight.title}</div>
-                                <div className="text-xs leading-relaxed text-gray-600">{insight.text}</div>
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* Conflicts */}
-                {dashStats.conflicts?.length > 0 && (
-                  <div className="bg-red-50 rounded-3xl border border-red-200 p-4 mb-5">
-                    <h3 className="font-black text-red-700 text-base mb-3 text-right">⚠️ ניגודי זמנים שזוהו</h3>
-                    <ul className="space-y-1">
-                      {dashStats.conflicts.map((c: string, i: number) => (
-                        <li key={i} className="text-sm text-red-600 text-right flex items-start gap-2 flex-row-reverse">
-                          <span className="flex-shrink-0">🔴</span><span>{c}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </>
-            )}
+        {/* ── LINKS TAB ──────────────────────────────────────────────── */}
+        {activeTab === 'links' && (
+          <div className="max-w-2xl mx-auto">
+            <LinksPanel
+              links={links} newLinkTitle={newLinkTitle} newLinkUrl={newLinkUrl} loading={loadingLinks}
+              onTitleChange={setNewLinkTitle} onUrlChange={setNewLinkUrl}
+              onAdd={addLink} onDelete={deleteLink} />
           </div>
         )}
 
@@ -1375,7 +1862,8 @@ export default function KidsSchedulePage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 sm:gap-4 max-w-4xl mx-auto">
           <RemindersPanel
             reminders={reminders} newVal={newReminder} loading={loadingReminders}
-            onNewChange={setNewReminder} onAdd={addReminder} onDelete={deleteReminder} />
+            onNewChange={setNewReminder} onAdd={addReminder}
+            onToggle={toggleReminder} onDelete={deleteReminder} />
           <GroceryPanel
             items={groceries} newVal={newGrocery} loading={loadingGroceries}
             onNewChange={setNewGrocery} onAdd={addGrocery}
