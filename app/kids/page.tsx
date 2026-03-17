@@ -256,6 +256,9 @@ function EventCard({ event, theme, onToggle, onDelete, onEdit, reactions, onReac
   const done = !!event.completed
   const [showPicker, setShowPicker] = useState(false)
 
+  // Afternoon detection: events starting at 14:00 or later get a warm amber overlay
+  const isAfternoon = !!event.start_time && event.start_time.slice(0, 5) >= '14:00'
+
   // Group reactions by emoji
   const grouped: Record<string, number> = {}
   for (const r of reactions) {
@@ -265,9 +268,13 @@ function EventCard({ event, theme, onToggle, onDelete, onEdit, reactions, onReac
   return (
     <div className="group relative rounded-2xl p-3 mb-2 transition-all"
       style={{
-        background: done ? (theme.dark ? '#2a2a2a' : '#f5f5f5') : theme.cardBg,
-        border: `1.5px solid ${done ? '#ddd' : theme.border}44`,
-        borderLeft: done ? undefined : `4px solid ${theme.border}`,
+        background: done
+          ? (theme.dark ? '#2a2a2a' : '#f5f5f5')
+          : isAfternoon
+            ? (theme.dark ? '#2a2216' : '#FFF8F0')   // warm cream for afternoon
+            : theme.cardBg,
+        border: `1.5px solid ${done ? '#ddd' : isAfternoon ? '#F59E0B' : theme.border}44`,
+        borderLeft: done ? undefined : isAfternoon ? '4px solid #F59E0B' : `4px solid ${theme.border}`,
         opacity: done ? 0.6 : 1,
       }}>
       <div className="flex items-start gap-2 flex-row-reverse">
@@ -283,8 +290,11 @@ function EventCard({ event, theme, onToggle, onDelete, onEdit, reactions, onReac
             <div className="flex flex-wrap gap-1 flex-row-reverse mb-1">
               {event.start_time && (
                 <span className="text-sm px-2.5 py-0.5 rounded-full font-black" dir="ltr"
-                  style={{ background: theme.badgeBg, color: theme.badgeText }}>
-                  ⏰ {event.start_time.slice(0,5)}{event.end_time ? ` – ${event.end_time.slice(0,5)}` : ''}
+                  style={{
+                    background: isAfternoon ? '#FEF3C7' : theme.badgeBg,
+                    color: isAfternoon ? '#92400E' : theme.badgeText,
+                  }}>
+                  {isAfternoon ? '🌅' : '⏰'} {event.start_time.slice(0,5)}{event.end_time ? ` – ${event.end_time.slice(0,5)}` : ''}
                 </span>
               )}
               {event.is_recurring && (
@@ -1155,7 +1165,7 @@ export default function KidsSchedulePage() {
   // WhatsApp send panel
   const [showWAPanel, setShowWAPanel] = useState(false)
   const [waMessage, setWaMessage] = useState('')
-  const [waTo, setWaTo] = useState('assaf')
+  const [waTo, setWaTo] = useState('group')
   const [waSending, setWaSending] = useState(false)
   const [waSentMsg, setWaSentMsg] = useState('')
 
@@ -1559,6 +1569,7 @@ export default function KidsSchedulePage() {
                 <p className="text-xs font-bold text-gray-500 mb-2 text-right">📨 שלח אל:</p>
                 <div className="flex flex-wrap gap-2 flex-row-reverse">
                   {[
+                    { key: 'group', label: '👨‍👩‍👧‍👦 קבוצה' },
                     { key: 'assaf', label: 'אסף' },
                     { key: 'danil', label: 'דניאל' },
                     { key: 'ami',   label: 'אמי' },
@@ -1603,23 +1614,23 @@ export default function KidsSchedulePage() {
         </div>
       )}
 
-      {/* ── FLOATING ACTION BUTTONS ───────────────────────────────────── */}
-      <div className="fixed bottom-6 left-4 flex flex-col gap-2 z-40 no-print">
-        {/* WhatsApp send */}
-        <button onClick={() => setShowWAPanel(true)}
-          title="שלח הודעת ווצאפ"
-          className="w-12 h-12 rounded-full flex items-center justify-center shadow-xl transition active:scale-90 hover:scale-105 text-xl"
-          style={{ background: 'linear-gradient(135deg,#25D366,#128C7E)', boxShadow: '0 4px 14px rgba(37,211,102,0.5)' }}>
-          💬
-        </button>
-        {/* Full weather */}
-        <button onClick={() => setShowWeatherPanel(true)}
-          title="תחזית מזג אוויר מלאה"
-          className="w-12 h-12 rounded-full flex items-center justify-center shadow-xl transition active:scale-90 hover:scale-105 text-xl"
-          style={{ background: 'linear-gradient(135deg,#3B82F6,#1D4ED8)', boxShadow: '0 4px 14px rgba(59,130,246,0.5)' }}>
-          🌤️
-        </button>
-      </div>
+      {/* ── FLOATING ACTION BUTTONS — left side column ───────────────── */}
+      {/* Stack (bottom→top): WA 💬 → Weather 🌤️ → Chat 🤖 (ChatWidget)  */}
+      {/* WA: bottom 24px */}
+      <button onClick={() => setShowWAPanel(true)}
+        title="שלח הודעת ווצאפ"
+        className="fixed z-40 no-print w-12 h-12 rounded-full flex items-center justify-center shadow-xl transition active:scale-90 hover:scale-105 text-xl"
+        style={{ bottom: 24, left: 16, background: 'linear-gradient(135deg,#25D366,#128C7E)', boxShadow: '0 4px 14px rgba(37,211,102,0.5)' }}>
+        💬
+      </button>
+      {/* Weather: bottom 80px */}
+      <button onClick={() => setShowWeatherPanel(true)}
+        title="תחזית מזג אוויר מלאה"
+        className="fixed z-40 no-print w-12 h-12 rounded-full flex items-center justify-center shadow-xl transition active:scale-90 hover:scale-105 text-xl"
+        style={{ bottom: 80, left: 16, background: 'linear-gradient(135deg,#0EA5E9,#1D4ED8)', boxShadow: '0 4px 14px rgba(14,165,233,0.5)' }}>
+        🌤️
+      </button>
+      {/* Chat 🤖 is at bottom 148px — rendered by ChatWidget in layout */}
 
       {/* ── BIRTHDAYS MODAL ─────────────────────────────────────────── */}
       {showBirthdaysModal && (
@@ -1870,16 +1881,17 @@ export default function KidsSchedulePage() {
             </div>
           </div>
 
-          {/* Clock + weather row */}
+          {/* Clock + compact weather row */}
           <div className="px-4 pt-1 pb-2 flex items-center justify-between gap-3">
             <div className="flex-1 flex justify-center">
               <LiveClock />
             </div>
+            {/* Compact weather pill — click for full forecast */}
             <button
-              className="flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity active:scale-95"
               onClick={() => setShowWeatherPanel(true)}
-              title="לחץ לתחזית מלאה">
-              <WeatherWidget />
+              title="לחץ לתחזית מלאה"
+              className="flex-shrink-0 flex items-center gap-1.5 bg-white/10 hover:bg-white/20 active:bg-white/25 rounded-xl px-3 py-1.5 transition-all active:scale-95 cursor-pointer">
+              <WeatherWidget compact />
             </button>
           </div>
 

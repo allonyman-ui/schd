@@ -19,11 +19,13 @@ export async function POST(request: NextRequest) {
   }
 
   // Resolve recipient — matches the env var names in .env.local
+  // Set WHATSAPP_GROUP_NUMBER to the family group chat number (individual WhatsApp, not group chat)
+  // Note: Twilio can only send to individual numbers, not WhatsApp group chat IDs
   const FAMILY_NUMBERS: Record<string, string> = {
-    assaf: process.env.WHATSAPP_PHONE_ASSAF || '',
-    danil: process.env.WHATSAPP_PHONE_DANIL || '',
+    assaf: process.env.WHATSAPP_PHONE_ASSAF  || '',
+    danil: process.env.WHATSAPP_PHONE_DANIL  || '',
     ami:   process.env.WHATSAPP_PHONE_AMI_MOM || '',
-    group: process.env.WHATSAPP_PHONE_ASSAF  || '', // "group" sends to assaf (Twilio sandbox is 1:1)
+    group: process.env.WHATSAPP_GROUP_NUMBER || process.env.WHATSAPP_PHONE_ASSAF || '',
   }
 
   // Accept either a key name ("assaf") or a raw number ("+972501234567")

@@ -26,19 +26,7 @@ function weatherInfo(code: number): { icon: string; label: string } {
   return { icon: '🌡️', label: '' }
 }
 
-function RainBar({ pct }: { pct: number }) {
-  const color = pct >= 70 ? '#3B82F6' : pct >= 40 ? '#60A5FA' : '#BAE6FD'
-  return (
-    <div className="flex items-center gap-1 mt-0.5">
-      <div className="flex-1 h-1 rounded-full bg-blue-100 overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
-      </div>
-      <span className="text-[10px] font-bold" style={{ color }}>{pct}%</span>
-    </div>
-  )
-}
-
-export default function WeatherWidget() {
+export default function WeatherWidget({ compact = false }: { compact?: boolean }) {
   const [data, setData] = useState<WeatherData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -52,14 +40,33 @@ export default function WeatherWidget() {
   }, [])
 
   if (loading) return (
-    <div className="flex items-center gap-2 text-white/50 text-sm px-1 py-1">
+    <div className="flex items-center gap-1.5 text-white/50 text-sm px-1 py-1">
       <span className="w-2 h-2 rounded-full bg-white/30 animate-pulse flex-shrink-0" />
-      <span>מזג אוויר...</span>
+      {!compact && <span>מזג אוויר...</span>}
     </div>
   )
   if (error || !data) return null
 
   const cur = weatherInfo(data.current.code)
+
+  // ── Compact mode: tiny pill for hero bar ──────────────────────────────
+  if (compact) {
+    return (
+      <div className="flex items-center gap-1.5 text-white" dir="rtl">
+        <span className="text-xl leading-none">{cur.icon}</span>
+        <span className="text-base font-black tabular-nums leading-none">{Math.round(data.current.temp)}°</span>
+        {data.current.rain > 0 && (
+          <span className="text-[11px] text-sky-300 font-bold leading-none">💧{data.current.rain}%</span>
+        )}
+        <span className="text-[10px] text-white/40 font-bold leading-none border-r border-white/15 pr-1.5">
+          {cur.label}
+        </span>
+        <span className="text-[10px] text-white/35 font-bold leading-none">תחזית ›</span>
+      </div>
+    )
+  }
+
+  // ── Full mode ─────────────────────────────────────────────────────────
   const tod = weatherInfo(data.today.code)
   const tom = weatherInfo(data.tomorrow.code)
 

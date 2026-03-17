@@ -137,22 +137,33 @@ export default function ChatWidget() {
         }
       `}</style>
 
-      {/* ── Floating button ── */}
+      {/* ── Floating button — left side, above WA + weather buttons ── */}
       <button
         onClick={() => { setOpen(o => !o); if (!open) loadContext() }}
-        className="fixed bottom-6 right-6 z-[9998] w-14 h-14 rounded-full shadow-2xl flex items-center justify-center text-2xl transition-all hover:scale-110 active:scale-95 no-print"
-        style={{ background: open ? 'linear-gradient(135deg,#4F46E5,#7C3AED)' : 'linear-gradient(135deg,#3B82F6,#6366F1)' }}
+        className="fixed z-[9998] w-12 h-12 rounded-full shadow-2xl flex items-center justify-center text-xl transition-all hover:scale-110 active:scale-95 no-print"
+        style={{
+          bottom: 148,   // stacked above WA (80px) and Weather (136px) buttons
+          left: 16,
+          background: open ? 'linear-gradient(135deg,#4F46E5,#7C3AED)' : 'linear-gradient(135deg,#3B82F6,#6366F1)',
+          boxShadow: '0 4px 14px rgba(99,102,241,0.5)',
+        }}
         aria-label="פתח צ'אט עם Claude"
         title="שוחח עם Claude"
       >
         {open ? '✕' : '🤖'}
       </button>
 
-      {/* ── Chat panel ── */}
+      {/* ── Chat panel — opens upward from button, anchored left ── */}
       {open && (
         <div
-          className="fixed bottom-24 right-6 z-[9997] w-[340px] sm:w-[380px] flex flex-col rounded-3xl shadow-2xl overflow-hidden no-print chat-slide-up"
-          style={{ maxHeight: '70vh', border: '1.5px solid #E0E7FF', background: '#fff' }}
+          className="fixed z-[9997] w-[320px] sm:w-[370px] flex flex-col rounded-3xl shadow-2xl overflow-hidden no-print chat-slide-up"
+          style={{
+            bottom: 212,   // just above the chat button
+            left: 16,
+            maxHeight: 'calc(100vh - 230px)',
+            border: '1.5px solid #E0E7FF',
+            background: '#fff',
+          }}
           dir="rtl"
         >
           {/* Header */}
