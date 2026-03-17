@@ -265,8 +265,24 @@ function EventCard({ event, theme, onToggle, onDelete, onEdit, reactions, onReac
     grouped[r.emoji] = (grouped[r.emoji] || 0) + 1
   }
 
+  const [imgExpanded, setImgExpanded] = useState(false)
+  const hasPhoto = !!event.attachment_url && /\.(jpe?g|png|gif|webp|avif|svg)(\?|$)/i.test(event.attachment_url)
+
   return (
-    <div className="group relative rounded-2xl p-3 mb-2 transition-all"
+    <>
+    {/* ── Lightbox ── */}
+    {imgExpanded && (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 no-print"
+        style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(6px)' }}
+        onClick={() => setImgExpanded(false)}>
+        <img src={event.attachment_url!} alt={event.title}
+          className="max-w-full max-h-[90vh] rounded-2xl shadow-2xl object-contain"
+          onClick={e => e.stopPropagation()} />
+        <button onClick={() => setImgExpanded(false)}
+          className="absolute top-4 right-4 text-white/70 hover:text-white text-3xl leading-none font-light">×</button>
+      </div>
+    )}
+    <div className="group relative rounded-2xl mb-2 transition-all overflow-hidden"
       style={{
         background: done
           ? (theme.dark ? '#2a2a2a' : '#f5f5f5')
@@ -277,6 +293,34 @@ function EventCard({ event, theme, onToggle, onDelete, onEdit, reactions, onReac
         borderLeft: done ? undefined : isAfternoon ? '4px solid #F59E0B' : `4px solid ${theme.border}`,
         opacity: done ? 0.6 : 1,
       }}>
+
+      {/* ── Photo banner (top of card, full-width) ─────────────────────── */}
+      {hasPhoto && (
+        <div className="relative w-full overflow-hidden cursor-pointer"
+          style={{ height: 140 }}
+          onClick={() => setImgExpanded(true)}>
+          <img
+            src={event.attachment_url!}
+            alt={event.title}
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+          />
+          {/* Gradient fade into card background */}
+          <div className="absolute inset-0 pointer-events-none"
+            style={{ background: 'linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.18) 100%)' }} />
+          {/* Expand hint */}
+          <div className="absolute bottom-1.5 left-2 flex items-center gap-1 bg-black/40 rounded-lg px-1.5 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="text-white text-[10px] font-bold">🔍 הגדל</span>
+          </div>
+          {/* Top-right: open in new tab */}
+          <a href={event.attachment_url!} target="_blank" rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            className="absolute top-1.5 left-1.5 bg-black/40 hover:bg-black/60 rounded-lg p-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="text-white text-[11px] font-bold">↗</span>
+          </a>
+        </div>
+      )}
+
+      <div className="p-3">
       <div className="flex items-start gap-2 flex-row-reverse">
         <button onClick={() => onToggle(event)}
           className="mt-0.5 flex-shrink-0 rounded-full transition-all active:scale-90 flex items-center justify-center"
@@ -322,14 +366,13 @@ function EventCard({ event, theme, onToggle, onDelete, onEdit, reactions, onReac
               className="inline-flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-lg mt-1.5 transition-opacity hover:opacity-80"
               style={{ background: theme.accent, color: '#fff' }}>🔗 כניסה לפגישה</a>
           )}
-          {/* Attachment thumbnail */}
-          {event.attachment_url && (
-            <div className="mt-2">
-              <a href={event.attachment_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
-                <img src={event.attachment_url} alt="קובץ מצורף" className="rounded-xl object-cover shadow-sm hover:opacity-90 transition-opacity"
-                  style={{ width: 80, height: 80 }} />
-              </a>
-            </div>
+          {/* Non-image attachment link */}
+          {event.attachment_url && !hasPhoto && (
+            <a href={event.attachment_url} target="_blank" rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg mt-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 transition">
+              📎 קובץ מצורף ↗
+            </a>
           )}
           {/* Reactions row */}
           <div className="flex items-center gap-1 flex-row-reverse mt-1.5 flex-wrap">
@@ -364,7 +407,9 @@ function EventCard({ event, theme, onToggle, onDelete, onEdit, reactions, onReac
           <button onClick={() => onDelete(event.id)} className="text-gray-300 hover:text-red-500 text-xs" title="מחק">🗑️</button>
         </div>
       </div>
-    </div>
+      </div>{/* end p-3 */}
+    </div>{/* end card */}
+    </>
   )
 }
 
