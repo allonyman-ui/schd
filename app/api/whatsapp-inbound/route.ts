@@ -29,10 +29,16 @@ FORMAT 2 - clarification_needed (event found but person truly unknown):
 {"intent":"clarification_needed","partial_events":[{same fields, person:""}],"clarification_question":"Hebrew question","missing_field":"person"}
 
 FORMAT 3 - event_query (user is asking about the schedule):
-{"intent":"event_query","reply":"Hebrew answer. Use *bold* for names/dates."}
+{"intent":"event_query","reply":"Hebrew answer. Use *bold* for names/dates. List events clearly with dates and times."}
 
 FORMAT 4 - chat (greeting, thanks, not schedule-related):
-{"intent":"chat","reply":"short helpful Hebrew response"}
+{"intent":"chat","reply":"short helpful Hebrew response. If user seems confused, mention they can send *עזרה* for a command list."}
+
+FORMAT 5 - event_delete (user wants to delete/remove an event):
+{"intent":"event_delete","title":"event title to delete","person":"person key or null","date":"YYYY-MM-DD or null","reply":"Hebrew confirmation question"}
+
+FORMAT 6 - reminder_add (user wants to add a reminder/task):
+{"intent":"reminder_add","text":"reminder text in Hebrew","person":"person key or null","date":"YYYY-MM-DD or null","reply":"Hebrew confirmation"}
 
 DATE AND TIME PARSING:
 Hebrew days (next occurrence from TODAY unless explicit date given):
@@ -57,6 +63,13 @@ PERSON DETECTION:
 - Child activity (חוג, אימון, בית ספר) with no name => clarification_needed
 - Work/adult meeting with no name => use "assaf"
 - Sender refers to themselves => use "assaf"
+
+INTENT SELECTION GUIDE:
+- "מחק את...", "הסר את...", "בטל את..." => event_delete
+- "תזכיר לי...", "תוסיף תזכורת...", "אל תשכח..." => reminder_add
+- "מה יש ל...", "מה התוכנית", "מתי...", "יש לי פגישה?" => event_query
+- Adding new event with date => event_add
+- General chat, greetings => chat
 
 IMAGE AND SCREENSHOT RULES:
 1. Read ALL text in the image carefully - Hebrew is right-to-left
@@ -211,6 +224,7 @@ type PendingState =
   | { type: 'pending_clarification'; missing_field: string; partial_events: Array<Record<string, unknown>>; expires: string }
   | { type: 'pending_duplicate';     dup_pairs: DupPair[]; clean_events: Array<Record<string, unknown>>; expires: string }
   | { type: 'pending_confirmation';  events: Array<Record<string, unknown>>; dupPairs: DupPair[]; expires: string }
+  | { type: 'pending_delete'; candidates: Array<{ id: string; title: string; date: string; start_time?: string | null; person: string }>; expires: string }
 
 async function getPending(from: string) {
   const supabase = createServiceClient()
@@ -445,6 +459,44 @@ export async function POST(request: NextRequest) {
     return twimlEmpty()
   }
 
+  // ── Help menu (intercepted before any AI processing) ──────────────────────
+  if (/^(עזרה|help|\?עזרה|\?help|תפריט|menu|commands|פקודות)$/i.test(messageBody.trim())) {
+    const helpText = [
+      '📋 *לוח אלוני — תפריט עזרה*',
+      '',
+      '📅 *הוספת אירוע:*',
+      'פשוט שלח/י הודעה עם הפרטים:',
+      '_"איתן — אימון כדורגל ביום ד׳ ב-16:00"_',
+      '_"פגישה עם רופא מחר ב-10:00 ב-שיבא"_',
+      '',
+      '🔍 *שאילתות לוח:*',
+      '"מה יש לאיתן מחר?"',
+      '"מה התוכנית השבוע?"',
+      '"מתי הפגישה של אסף?"',
+      '',
+      '🗑️ *מחיקת אירוע:*',
+      '"מחק את אימון הכדורגל של איתן"',
+      '"הסר פגישה ביום ד׳"',
+      '',
+      '⏰ *תזכורת:*',
+      '"תזכיר לי לקנות חלב מחר"',
+      '"אל תשכח — איתן צריך כסף לאוטובוס"',
+      '',
+      '📸 *שלח תמונה:*',
+      'שלח/י תמונה מהניוזלטר של בית הספר',
+      'ואוציא מתוכה את כל האירועים',
+      '',
+      '🎙️ *הודעה קולית:*',
+      'שלח/י הודעה קולית ואמלל אותה',
+      '',
+      '🔄 *אירוע קבוע:*',
+      '"כל שלישי — חוג שחייה של אמי ב-17:00"',
+      '',
+      '_טיפ: אחרי כל זיהוי תקבל/י אישור לפני השמירה_',
+    ].join('\n')
+    return twimlReply(helpText)
+  }
+
   // Deduplication: if we already processed this MessageSid, skip (Twilio retries)
   if (messageSid) {
     const supabaseCheck = createServiceClient()
@@ -630,6 +682,23 @@ export async function POST(request: NextRequest) {
       return twimlReply('🤔 לא הבנתי את התיקון.\nענה/י *כן* לשמירה, *בטל* לביטול, או כתוב/י מה לשנות בצורה ברורה יותר.')
     }
 
+    // ── Resolve: pending delete ───────────────────────────────────────
+    if (pending.state.type === 'pending_delete') {
+      const candidates = pending.state.candidates || []
+      if (/^(בטל|לא|no|cancel)$/i.test(answer)) {
+        return twimlReply('❌ בסדר, לא נמחק כלום.')
+      }
+      const num = parseInt(answer, 10)
+      const ev = candidates[num - 1]
+      if (ev) {
+        await supabase.from('events').delete().eq('id', ev.id)
+        return twimlReply(
+          `🗑️ *נמחק!*\n\n📌 ${ev.title}\n👤 ${HE_NAMES[ev.person] || ev.person}\n📅 ${heDate(ev.date)}`
+        )
+      }
+      return twimlReply(`🤔 לא הבנתי. ענה/י *1*–*${candidates.length}* למחיקה, או *בטל*.`)
+    }
+
     void supabase.from('whatsapp_batches').insert({
       raw_text: `[WHATSAPP from: ${from} | sid: ${messageSid}]\n\n[תשובה: ${answer}]`,
       processed_events: resolvedEvents,
@@ -684,6 +753,8 @@ export async function POST(request: NextRequest) {
     | { intent: 'clarification_needed'; partial_events: Array<Record<string, unknown>>; clarification_question: string; missing_field: string }
     | { intent: 'event_query'; reply: string }
     | { intent: 'chat'; reply: string }
+    | { intent: 'event_delete'; title: string; person: string | null; date: string | null; reply: string }
+    | { intent: 'reminder_add'; text: string; person: string | null; date: string | null; reply: string }
 
   let result: ClaudeResult | null = null
 
@@ -745,6 +816,82 @@ export async function POST(request: NextRequest) {
     console.log('[whatsapp-inbound] Replying:', result.intent)
     void supabase.from('whatsapp_batches').insert({ raw_text: logText, processed_events: [] })
     return twimlReply(result.reply)
+  }
+
+  // ── reminder_add ──────────────────────────────────────────────────────────
+  if (result.intent === 'reminder_add') {
+    console.log('[whatsapp-inbound] Adding reminder:', result.text)
+    try {
+      const reminderDate = result.date || today
+      const reminderPerson = result.person || null
+      await supabase.from('reminders').insert({
+        text: result.text,
+        person: reminderPerson,
+        date: reminderDate,
+        completed: false,
+      })
+      void supabase.from('whatsapp_batches').insert({ raw_text: logText, processed_events: [] })
+      const nameStr = reminderPerson ? ` ל${HE_NAMES[reminderPerson] || reminderPerson}` : ''
+      return twimlReply(`✅ *תזכורת נוספה${nameStr}!*\n\n📝 ${result.text}\n📅 ${heDate(reminderDate)}`)
+    } catch (err) {
+      console.error('[whatsapp-inbound] reminder insert error:', err)
+      return twimlReply('⚠️ לא הצלחתי להוסיף את התזכורת. נסה שוב.')
+    }
+  }
+
+  // ── event_delete ──────────────────────────────────────────────────────────
+  if (result.intent === 'event_delete') {
+    console.log('[whatsapp-inbound] Delete intent for:', result.title)
+    try {
+      // Find matching events
+      let query = supabase
+        .from('events')
+        .select('id, title, date, start_time, person')
+        .order('date')
+        .limit(5)
+
+      if (result.person) query = query.eq('person', result.person)
+      if (result.date)   query = query.eq('date', result.date)
+
+      const { data: candidates } = await query
+
+      const matches = (candidates || []).filter(ev =>
+        titlesAreSimilar(ev.title, result.title)
+      )
+
+      if (matches.length === 0) {
+        void supabase.from('whatsapp_batches').insert({ raw_text: logText, processed_events: [] })
+        return twimlReply(`🔍 לא מצאתי אירוע בשם *"${result.title}"* בלוח.\nנסה לכתוב את השם בצורה מדויקת יותר.`)
+      }
+
+      if (matches.length === 1) {
+        const ev = matches[0]
+        // Delete it
+        await supabase.from('events').delete().eq('id', ev.id)
+        void supabase.from('whatsapp_batches').insert({ raw_text: logText, processed_events: [] })
+        return twimlReply(
+          `🗑️ *נמחק בהצלחה!*\n\n📌 ${ev.title}\n👤 ${HE_NAMES[ev.person] || ev.person}\n📅 ${heDate(ev.date)}${ev.start_time ? `\n⏰ ${ev.start_time}` : ''}`
+        )
+      }
+
+      // Multiple matches — show list and ask which
+      const listLines = ['🔍 *מצאתי כמה אירועים דומים:*', '']
+      matches.forEach((ev, i) => {
+        listLines.push(`${i + 1}. *${ev.title}* — ${HE_NAMES[ev.person] || ev.person} — ${heDate(ev.date)}`)
+      })
+      listLines.push('')
+      listLines.push('ענה/י *1*, *2*, וכו׳ כדי למחוק, או *בטל* לביטול')
+
+      // Store pending delete list in whatsapp_batches temporarily
+      await supabase.from('whatsapp_batches').insert({
+        raw_text: `[PENDING from: ${from}]\n\n[מחיקה: ${result.title}]`,
+        processed_events: { type: 'pending_delete', candidates: matches, expires: new Date(Date.now() + 10 * 60 * 1000).toISOString() } as unknown as Record<string, unknown>[],
+      })
+      return twimlReply(listLines.join('\n'))
+    } catch (err) {
+      console.error('[whatsapp-inbound] delete error:', err)
+      return twimlReply('⚠️ שגיאה במחיקה. נסה שוב.')
+    }
   }
 
   // ── clarification_needed ──────────────────────────────────────────────────

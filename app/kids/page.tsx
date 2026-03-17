@@ -49,6 +49,33 @@ const HE_DAYS_FULL: Record<string,string> = {
   sunday:'ראשון', monday:'שני', tuesday:'שלישי', wednesday:'רביעי', thursday:'חמישי', friday:'שישי', saturday:'שבת'
 }
 
+// Quick presets for recurring days
+const RECURRENCE_PRESETS = [
+  { label: 'כל ימי הלימודים', days: ['sunday','monday','tuesday','wednesday','thursday'] },
+  { label: 'א׳ + ג׳ + ה׳', days: ['sunday','tuesday','thursday'] },
+  { label: 'ב׳ + ד׳', days: ['monday','wednesday'] },
+  { label: 'כל שבוע (א׳-ו׳)', days: ['sunday','monday','tuesday','wednesday','thursday','friday'] },
+  { label: 'סוף שבוע', days: ['friday','saturday'] },
+]
+
+function getNextOccurrences(startDate: string, recurrenceDays: string[], count: number): string[] {
+  const result: string[] = []
+  try {
+    const start = new Date(startDate + 'T12:00:00')
+    let cur = new Date(start)
+    let tries = 0
+    while (result.length < count && tries < 90) {
+      const dayName = DAY_NAMES[cur.getDay()]
+      if (recurrenceDays.includes(dayName)) {
+        result.push(cur.toISOString().split('T')[0])
+      }
+      cur = new Date(cur.getTime() + 86400000)
+      tries++
+    }
+  } catch { /* ignore */ }
+  return result
+}
+
 // ── Per-kid theme packs ────────────────────────────────────────────────────
 const THEMES: Record<string, KidTheme[]> = {
   ami: [
@@ -400,8 +427,11 @@ function EventModal({ form, editing, onClose, onSave, onSaveAnyway, onChange, du
                 )
               })}
             </div>
-            {form.persons.length > 1 && (
+            {form.persons.length > 1 && !editing && (
               <p className="text-xs text-blue-500 mt-1.5 text-right">✨ ייווצרו {form.persons.length} אירועים נפרדים</p>
+            )}
+            {form.persons.length > 1 && editing && (
+              <p className="text-xs text-emerald-600 mt-1.5 text-right">✨ האירוע הנוכחי יעודכן + ייווצרו {form.persons.length - 1} אירועים חדשים</p>
             )}
           </div>
 
@@ -452,22 +482,95 @@ function EventModal({ form, editing, onClose, onSave, onSaveAnyway, onChange, du
             )}
           </div>
 
-          <div className="rounded-2xl border-2 border-gray-100 p-3">
-            <label className="flex items-center gap-2 cursor-pointer flex-row-reverse justify-end">
-              <span className="text-sm font-bold text-gray-700">אירוע קבוע (חוזר)</span>
-              <input type="checkbox" checked={form.is_recurring} onChange={e => onChange({ is_recurring: e.target.checked })} className="w-5 h-5 cursor-pointer" style={{ accentColor: '#3B82F6' }} />
-            </label>
-            {form.is_recurring && (
-              <div className="mt-3">
-                <div className="text-xs font-bold text-gray-500 mb-2 text-right">ימי חזרה:</div>
-                <div className="flex flex-wrap gap-1.5 flex-row-reverse">
-                  {DAY_NAMES.map(day => (
-                    <button key={day} onClick={() => toggleDay(day)}
-                      className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all ${form.recurrence_days.includes(day) ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-                      {HE_DAYS[day]}
-                    </button>
-                  ))}
+          {/* ── Recurring event — redesigned ─────────────────────────── */}
+          <div className={`rounded-2xl border-2 transition-all ${form.is_recurring ? 'border-blue-300 bg-blue-50/60' : 'border-gray-100'} p-4`}>
+            {/* Toggle */}
+            <button type="button" onClick={() => onChange({ is_recurring: !form.is_recurring })}
+              className="w-full flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 flex-row-reverse">
+                {/* iOS-style toggle */}
+                <div className={`relative w-12 h-7 rounded-full transition-colors duration-200 ${form.is_recurring ? 'bg-blue-500' : 'bg-gray-200'}`}>
+                  <div className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200 ${form.is_recurring ? 'right-1' : 'right-6'}`} />
                 </div>
+                <span className={`text-sm font-black ${form.is_recurring ? 'text-blue-700' : 'text-gray-600'}`}>🔄 אירוע קבוע (חוזר)</span>
+              </div>
+              {form.is_recurring && form.recurrence_days.length > 0 && (
+                <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">
+                  {form.recurrence_days.map(d => HE_DAYS[d]).join(' ')}
+                </span>
+              )}
+            </button>
+
+            {form.is_recurring && (
+              <div className="mt-4 space-y-4">
+
+                {/* Quick presets */}
+                <div>
+                  <div className="text-xs font-bold text-gray-500 mb-2 text-right">⚡ בחירה מהירה:</div>
+                  <div className="flex flex-wrap gap-2 flex-row-reverse">
+                    {RECURRENCE_PRESETS.map(preset => {
+                      const isActive = preset.days.length === form.recurrence_days.length &&
+                        preset.days.every(d => form.recurrence_days.includes(d))
+                      return (
+                        <button key={preset.label} type="button"
+                          onClick={() => onChange({ recurrence_days: isActive ? [] : [...preset.days] })}
+                          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border-2 ${
+                            isActive ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300 hover:text-blue-600'
+                          }`}>
+                          {preset.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Individual day selector */}
+                <div>
+                  <div className="text-xs font-bold text-gray-500 mb-2 text-right">📅 בחר ימים ידנית:</div>
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {DAY_NAMES.map(day => {
+                      const active = form.recurrence_days.includes(day)
+                      return (
+                        <button key={day} type="button" onClick={() => toggleDay(day)}
+                          className={`py-2.5 rounded-xl text-xs font-black transition-all flex flex-col items-center gap-0.5 ${
+                            active ? 'bg-blue-600 text-white shadow-sm scale-105' : 'bg-white text-gray-500 border-2 border-gray-100 hover:border-blue-300'
+                          }`}>
+                          <span className="text-xs">{HE_DAYS[day]}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div className="flex justify-between mt-1 px-0.5">
+                    {DAY_NAMES.map(day => (
+                      <span key={day} className="text-[9px] text-gray-400 font-medium" style={{ width: '14.28%', textAlign: 'center' }}>
+                        {HE_DAYS_FULL[day].slice(0, 3)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Next occurrences preview */}
+                {form.recurrence_days.length > 0 && form.date && (
+                  <div className="bg-white rounded-xl p-3 border border-blue-100">
+                    <div className="text-xs font-bold text-blue-700 mb-2 text-right">📆 המועדים הקרובים:</div>
+                    <div className="flex flex-wrap gap-1.5 flex-row-reverse">
+                      {getNextOccurrences(form.date, form.recurrence_days, 6).map((d, i) => {
+                        const dt = new Date(d + 'T12:00:00')
+                        const dayLabel = HE_DAYS_FULL[DAY_NAMES[dt.getDay()]]
+                        const dateLabel = `${dt.getDate()}/${dt.getMonth() + 1}`
+                        return (
+                          <span key={i} className="text-xs bg-blue-50 rounded-lg px-2.5 py-1.5 text-blue-700 font-bold border border-blue-100 leading-none">
+                            {dayLabel} {dateLabel}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {form.recurrence_days.length === 0 && (
+                  <p className="text-xs text-amber-600 font-bold text-right">⚠️ בחר לפחות יום אחד להחזרה</p>
+                )}
               </div>
             )}
           </div>
@@ -622,6 +725,166 @@ const LINK_CATEGORIES = [
   { label: 'עבודה',   emoji: '💼', color: '#F59E0B' },
   { label: 'אחר',     emoji: '🔗', color: '#6B7280' },
 ]
+// ── FullWeatherPanel ──────────────────────────────────────────────────────
+interface HourlyEntry { time: string; date: string; temp: number; rain: number; code: number; wind: number; humidity: number }
+interface DayEntry { min: number; max: number; rain: number; code: number; sunrise: string | null; sunset: string | null }
+interface FullWeatherData {
+  current: { temp: number; rain: number; code: number; wind: number; humidity: number }
+  hourly: HourlyEntry[]
+  today: DayEntry
+  tomorrow: DayEntry
+  dayAfter?: DayEntry | null
+}
+
+function wxEmoji(code: number): string {
+  if (code === 0) return '☀️'
+  if (code === 1) return '🌤️'
+  if (code === 2) return '⛅'
+  if (code === 3) return '☁️'
+  if (code === 45 || code === 48) return '🌫️'
+  if (code >= 51 && code <= 55) return '🌦️'
+  if (code >= 61 && code <= 65) return '🌧️'
+  if (code >= 71 && code <= 77) return '❄️'
+  if (code >= 80 && code <= 82) return '🌦️'
+  if (code >= 95) return '⛈️'
+  return '🌡️'
+}
+function wxLabel(code: number): string {
+  if (code === 0) return 'בהיר ☀️'
+  if (code === 1) return 'כמעט בהיר'
+  if (code === 2) return 'מעונן חלקית'
+  if (code === 3) return 'מעונן'
+  if (code === 45 || code === 48) return 'ערפל'
+  if (code >= 51 && code <= 55) return 'טפטוף'
+  if (code >= 61 && code <= 65) return 'גשם 🌧️'
+  if (code >= 71 && code <= 77) return 'שלג ❄️'
+  if (code >= 80 && code <= 82) return 'מקלחות'
+  if (code >= 95) return 'סערה ⛈️'
+  return ''
+}
+
+function funWeatherMsg(temp: number, code: number): string {
+  if (code >= 95) return 'היום יש סערה! תישארו בבית 🏠⚡'
+  if (code >= 61 && code <= 65) return 'יורד גשם! אל תשכחו מטרייה ☂️'
+  if (code >= 51 && code <= 55) return 'קצת טפטופים בחוץ, תתלבשו בהתאם 🌂'
+  if (temp >= 35) return 'חם מאוד! שתו הרבה מים 💧'
+  if (temp >= 28) return 'חם מחוץ! כיף לצאת לים 🏖️'
+  if (temp >= 20) return 'מזג אוויר נחמד — יום טוב לפעילות בחוץ 🌳'
+  if (temp >= 15) return 'נעים אבל קצת קריר — לבשו ז\'קט 🧥'
+  if (temp >= 10) return 'קריר! התלבשו חם 🧣'
+  return 'קר מאוד! שמרו על עצמכם 🥶'
+}
+
+const HE_WEEK = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת']
+
+function FullWeatherPanel({ onClose }: { onClose: () => void }) {
+  const [data, setData] = useState<FullWeatherData | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/weather?full=true')
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => { if (!d.error) setData(d) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  // Group hourly entries by date
+  const byDate: Record<string, HourlyEntry[]> = {}
+  if (data) {
+    for (const h of data.hourly) {
+      if (!h.date) continue
+      if (!byDate[h.date]) byDate[h.date] = []
+      byDate[h.date].push(h)
+    }
+  }
+  const dates = Object.keys(byDate).slice(0, 3)
+
+  const dateLabel = (d: string) => {
+    const dt = new Date(d + 'T12:00:00')
+    return `יום ${HE_WEEK[dt.getDay()]}, ${dt.getDate()}/${dt.getMonth() + 1}`
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" dir="rtl"
+      style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}>
+      <div className="w-full sm:max-w-lg bg-gradient-to-b from-[#0a1628] to-[#1a3a6e] rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="sticky top-0 px-5 pt-5 pb-3 flex items-center justify-between"
+          style={{ background: 'linear-gradient(to bottom, #0a1628, transparent)' }}>
+          <h2 className="text-xl font-black text-white">🌤️ תחזית מזג האוויר</h2>
+          <button onClick={onClose} className="text-white/50 hover:text-white text-2xl leading-none">×</button>
+        </div>
+
+        <div className="px-5 pb-6 space-y-5">
+          {loading && (
+            <div className="text-center py-12 text-white/40 text-4xl animate-pulse">🌡️</div>
+          )}
+
+          {!loading && data && (
+            <>
+              {/* Current conditions */}
+              <div className="bg-white/10 rounded-2xl p-4 text-center">
+                <div className="text-6xl mb-2">{wxEmoji(data.current.code)}</div>
+                <div className="text-5xl font-black text-white tabular-nums">{Math.round(data.current.temp)}°</div>
+                <div className="text-blue-200 font-bold mt-1">{wxLabel(data.current.code)}</div>
+                <div className="text-yellow-300 font-black text-sm mt-2">{funWeatherMsg(data.current.temp, data.current.code)}</div>
+                <div className="flex justify-center gap-4 mt-3 text-sm text-white/60">
+                  {data.current.rain > 0 && <span>💧 גשם {data.current.rain}%</span>}
+                  {data.current.wind > 0 && <span>💨 רוח {Math.round(data.current.wind)} קמ״ש</span>}
+                  {data.current.humidity > 0 && <span>🌊 לחות {data.current.humidity}%</span>}
+                </div>
+              </div>
+
+              {/* Day summaries */}
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: 'היום', d: data.today },
+                  { label: 'מחר', d: data.tomorrow },
+                  ...(data.dayAfter ? [{ label: 'מחרתיים', d: data.dayAfter }] : []),
+                ].map(({ label, d }) => (
+                  <div key={label} className="bg-white/10 rounded-2xl p-3 text-center">
+                    <div className="text-sm font-bold text-white/50 mb-1">{label}</div>
+                    <div className="text-2xl">{wxEmoji(d.code)}</div>
+                    <div className="text-white font-black tabular-nums mt-1">{Math.round(d.min)}°–{Math.round(d.max)}°</div>
+                    {d.rain > 0 && <div className="text-sky-300 text-xs mt-1">💧 {d.rain}%</div>}
+                    {d.sunrise && <div className="text-yellow-200/60 text-[11px] mt-1">🌅 {d.sunrise} | 🌇 {d.sunset}</div>}
+                  </div>
+                ))}
+              </div>
+
+              {/* Hourly forecast per day */}
+              {dates.map(date => (
+                <div key={date}>
+                  <div className="text-white/60 text-xs font-bold mb-2">{dateLabel(date)}</div>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                    {byDate[date].filter((_, i) => i % 2 === 0).map((h, i) => (
+                      <div key={i}
+                        className="flex-shrink-0 flex flex-col items-center gap-1 bg-white/10 rounded-xl px-2.5 py-2 min-w-[52px]">
+                        <span className="text-[11px] font-bold text-white/50">{h.time}</span>
+                        <span className="text-lg leading-none">{wxEmoji(h.code)}</span>
+                        <span className="text-sm font-black text-white tabular-nums">{Math.round(h.temp)}°</span>
+                        {h.rain > 0 && (
+                          <>
+                            <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                              <div className="h-full bg-sky-400 rounded-full" style={{ width: `${h.rain}%` }} />
+                            </div>
+                            <span className="text-[9px] text-sky-300">{h.rain}%</span>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function LinksPanel({ links, newLinkTitle, newLinkUrl, loading, onTitleChange, onUrlChange, onAdd, onDelete }: {
   links: { id: string; title: string; url: string }[]
   newLinkTitle: string; newLinkUrl: string; loading: boolean
@@ -889,6 +1152,15 @@ export default function KidsSchedulePage() {
   const [restWeekEvents, setRestWeekEvents] = useState<Event[]>([])
   const [loadingRestWeek, setLoadingRestWeek] = useState(false)
 
+  // WhatsApp send panel
+  const [showWAPanel, setShowWAPanel] = useState(false)
+  const [waMessage, setWaMessage] = useState('')
+  const [waSending, setWaSending] = useState(false)
+  const [waSentMsg, setWaSentMsg] = useState('')
+
+  // Weather full panel
+  const [showWeatherPanel, setShowWeatherPanel] = useState(false)
+
   const dateStr = format(selectedDate, 'yyyy-MM-dd')
   const dayOfWeek = DAY_NAMES[selectedDate.getDay()]
 
@@ -1059,10 +1331,19 @@ export default function KidsSchedulePage() {
         recurrence_days: eventForm.is_recurring ? eventForm.recurrence_days : null,
       }
       if (editingEvent) {
-        // Edit: update with first selected person
-        const payload = { ...basePayload, person: eventForm.persons[0] || editingEvent.person }
+        // Edit: update existing event with first person; create new events for any added persons
+        const primaryPerson = eventForm.persons[0] || editingEvent.person
+        const payload = { ...basePayload, person: primaryPerson }
         const res = await fetch(`/api/events?id=${editingEvent.id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
         if (res.ok) { const updated = await res.json(); setEvents(prev => prev.map(e => e.id===editingEvent.id ? {...e,...updated} : e)) }
+        // Create events for additional persons added during edit (always bypass dup check)
+        const extraPersons = eventForm.persons.slice(1)
+        const newEvents: Event[] = []
+        for (const person of extraPersons) {
+          const r = await fetch('/api/events', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ ...basePayload, person }) })
+          if (r.ok) { const c = await r.json(); if (c.id) newEvents.push(c) }
+        }
+        if (newEvents.length > 0) setEvents(prev => [...prev, ...newEvents])
       } else {
         // New: create one event per selected person
         const created: Event[] = []
@@ -1179,6 +1460,32 @@ export default function KidsSchedulePage() {
     } catch { /* ignore — optimistic is fine */ }
   }
 
+  // WhatsApp send function
+  async function sendWhatsApp() {
+    if (!waMessage.trim()) return
+    setWaSending(true)
+    setWaSentMsg('')
+    try {
+      const res = await fetch('/api/whatsapp-send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: 'assaf', body: waMessage.trim() }),
+      })
+      if (res.ok) {
+        setWaSentMsg('✅ ההודעה נשלחה!')
+        setWaMessage('')
+        setTimeout(() => { setWaSentMsg(''); setShowWAPanel(false) }, 2000)
+      } else {
+        const { error } = await res.json()
+        setWaSentMsg(`❌ שגיאה: ${error || 'לא ידוע'}`)
+      }
+    } catch (e) {
+      setWaSentMsg('❌ שגיאת רשת')
+    } finally {
+      setWaSending(false)
+    }
+  }
+
   // Helpers
   function getPersonEvents(key: string) {
     return events.filter(e => {
@@ -1229,6 +1536,69 @@ export default function KidsSchedulePage() {
       {showVideoModal && (
         <VideoSummaryModal onClose={() => setShowVideoModal(false)} />
       )}
+
+      {/* ── FULL WEATHER PANEL ────────────────────────────────────────── */}
+      {showWeatherPanel && (
+        <FullWeatherPanel onClose={() => setShowWeatherPanel(false)} />
+      )}
+
+      {/* ── WHATSAPP SEND PANEL ───────────────────────────────────────── */}
+      {showWAPanel && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+          <div className="w-full sm:max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden" dir="rtl">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between"
+              style={{ background: 'linear-gradient(135deg,#25D366,#128C7E)' }}>
+              <h2 className="text-lg font-black text-white">📱 שלח הודעה לווצאפ</h2>
+              <button onClick={() => setShowWAPanel(false)} className="text-white/70 hover:text-white text-2xl leading-none">×</button>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-sm text-gray-500 text-right">הודעה תישלח לקבוצת המשפחה</p>
+              <textarea
+                value={waMessage}
+                onChange={e => { setWaMessage(e.target.value); setWaSentMsg('') }}
+                placeholder="כתוב/י הודעה..."
+                rows={4}
+                className="w-full border-2 border-gray-200 rounded-2xl px-3 py-2.5 text-sm focus:outline-none focus:border-green-400 resize-none text-right"
+                onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) sendWhatsApp() }}
+              />
+              {waSentMsg && (
+                <p className={`text-sm font-bold text-right ${waSentMsg.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>{waSentMsg}</p>
+              )}
+              <div className="flex gap-2 flex-row-reverse">
+                <button onClick={sendWhatsApp} disabled={waSending || !waMessage.trim()}
+                  className="flex-1 py-2.5 rounded-2xl font-black text-white transition disabled:opacity-40"
+                  style={{ background: 'linear-gradient(135deg,#25D366,#128C7E)' }}>
+                  {waSending ? '⏳ שולח...' : '📤 שלח'}
+                </button>
+                <button onClick={() => { setShowWAPanel(false); setWaMessage(''); setWaSentMsg('') }}
+                  className="px-5 py-2.5 rounded-2xl border-2 border-gray-200 text-gray-600 font-bold text-sm hover:bg-gray-50 transition">
+                  ביטול
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-300 text-center">Ctrl+Enter לשליחה מהירה</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── FLOATING ACTION BUTTONS ───────────────────────────────────── */}
+      <div className="fixed bottom-6 left-4 flex flex-col gap-2 z-40 no-print">
+        {/* WhatsApp send */}
+        <button onClick={() => setShowWAPanel(true)}
+          title="שלח הודעת ווצאפ"
+          className="w-12 h-12 rounded-full flex items-center justify-center shadow-xl transition active:scale-90 hover:scale-105 text-xl"
+          style={{ background: 'linear-gradient(135deg,#25D366,#128C7E)', boxShadow: '0 4px 14px rgba(37,211,102,0.5)' }}>
+          💬
+        </button>
+        {/* Full weather */}
+        <button onClick={() => setShowWeatherPanel(true)}
+          title="תחזית מזג אוויר מלאה"
+          className="w-12 h-12 rounded-full flex items-center justify-center shadow-xl transition active:scale-90 hover:scale-105 text-xl"
+          style={{ background: 'linear-gradient(135deg,#3B82F6,#1D4ED8)', boxShadow: '0 4px 14px rgba(59,130,246,0.5)' }}>
+          🌤️
+        </button>
+      </div>
 
       {/* ── BIRTHDAYS MODAL ─────────────────────────────────────────── */}
       {showBirthdaysModal && (
@@ -1484,9 +1854,12 @@ export default function KidsSchedulePage() {
             <div className="flex-1 flex justify-center">
               <LiveClock />
             </div>
-            <div className="flex-shrink-0">
+            <button
+              className="flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity active:scale-95"
+              onClick={() => setShowWeatherPanel(true)}
+              title="לחץ לתחזית מלאה">
               <WeatherWidget />
-            </div>
+            </button>
           </div>
 
           {/* Date nav row — generous touch targets for mobile */}
