@@ -172,8 +172,9 @@ const FAMILY_PEOPLE = [
   { key: 'danil', name: 'דניאל',  color: '#15803D', photo: null, emoji: '🌿' },
 ]
 
-type TabKey = 'family' | 'kids' | 'assaf' | 'danil' | 'links'
+type TabKey = 'now' | 'family' | 'kids' | 'assaf' | 'danil' | 'links'
 const TABS = [
+  { key: 'now'    as TabKey, label: '⏰ עכשיו' },
   { key: 'family' as TabKey, label: '🏠 משפחה' },
   { key: 'kids'   as TabKey, label: '👧👦 ילדים' },
   { key: 'assaf'  as TabKey, label: '💼 אסף' },
@@ -1147,6 +1148,10 @@ export default function KidsSchedulePage() {
   const [photoGalleryKid, setPhotoGalleryKid] = useState('')
   const [showVideoModal, setShowVideoModal] = useState(false)
 
+  // Now view
+  const [nowEvents, setNowEvents] = useState<Event[]>([])
+  const [loadingNow, setLoadingNow] = useState(false)
+
   // Event modal
   const [showModal, setShowModal] = useState(false)
   const [editingEvent, setEditingEvent] = useState<Event|null>(null)
@@ -1236,10 +1241,30 @@ export default function KidsSchedulePage() {
     } finally { setLoadingLinks(false) }
   }, [])
 
+  // Load upcoming events for the "Now" view (next 7 days, all people)
+  const loadNowEvents = useCallback(async () => {
+    setLoadingNow(true)
+    try {
+      const today = format(new Date(), 'yyyy-MM-dd')
+      const end   = format(addDays(new Date(), 7), 'yyyy-MM-dd')
+      const res = await fetch(`/api/events?start=${today}&end=${end}&include_recurring=true`)
+      if (res.ok) setNowEvents(await res.json())
+    } finally { setLoadingNow(false) }
+  }, [])
+
   useEffect(() => { loadEvents() }, [loadEvents])
   useEffect(() => { loadReminders() }, [loadReminders])
   useEffect(() => { loadGroceries() }, [loadGroceries])
   useEffect(() => { loadLinks() }, [loadLinks])
+
+  // Load + auto-refresh the Now view every minute
+  useEffect(() => {
+    if (activeTab === 'now') loadNowEvents()
+  }, [activeTab, loadNowEvents])
+  useEffect(() => {
+    const id = setInterval(() => { if (activeTab === 'now') loadNowEvents() }, 60_000)
+    return () => clearInterval(id)
+  }, [activeTab, loadNowEvents])
 
   useEffect(() => {
     fetch('/api/kid-profiles')
@@ -1470,6 +1495,29 @@ export default function KidsSchedulePage() {
       .filter(e => e.date === todayStr2 && e.start_time && !isEventPast(e) && !e.is_recurring)
       .sort((a, b) => (a.start_time ?? '').localeCompare(b.start_time ?? ''))
     return upcoming[0]?.id === event.id
+  }
+
+  // ── "Now" view helpers ──────────────────────────────────────────────────
+  function timeUntil(eventDate: string, eventTime: string): string {
+    const now = new Date()
+    const eventDt = new Date(`${eventDate}T${eventTime.slice(0,5)}:00`)
+    const diffMs = eventDt.getTime() - now.getTime()
+    if (diffMs <= 0) return 'עכשיו'
+    const diffMin = Math.floor(diffMs / 60000)
+    if (diffMin < 60) return `בעוד ${diffMin} דק׳`
+    const diffHrs = Math.floor(diffMin / 60)
+    if (diffHrs < 24) return `בעוד ${diffHrs} שע׳`
+    const diffDays = Math.floor(diffHrs / 24)
+    if (diffDays === 1) return 'מחר'
+    return `בעוד ${diffDays} ימים`
+  }
+
+  function nowDayLabel(eventDate: string): string {
+    const today = format(new Date(), 'yyyy-MM-dd')
+    const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd')
+    if (eventDate === today) return 'היום'
+    if (eventDate === tomorrow) return 'מחר'
+    return format(new Date(eventDate + 'T12:00:00'), 'EEEE d/M', { locale: he })
   }
 
   // Dashboard helpers
@@ -1927,6 +1975,119 @@ export default function KidsSchedulePage() {
         })()}
 
         {/* ── LINKS TAB ──────────────────────────────────────────────── */}
+        {/* ── NOW TAB ─────────────────────────────────────────────────── */}
+        {activeTab === 'now' && (() => {
+          const nowStr   = format(new Date(), 'HH:mm')
+          const todayNow = format(new Date(), 'yyyy-MM-dd')
+
+          const personData = FAMILY_PEOPLE.map(person => {
+            const upcoming = nowEvents
+              .filter(ev => {
+                if (ev.person !== person.key) return false
+                if (!ev.start_time) return false
+                if (ev.date === todayNow) return ev.start_time.slice(0, 5) >= nowStr
+                return ev.date > todayNow
+              })
+              .sort((a, b) =>
+                a.date !== b.date
+                  ? a.date.localeCompare(b.date)
+                  : (a.start_time ?? '').localeCompare(b.start_time ?? '')
+              )
+              .slice(0, 2)
+            return { person, upcoming }
+          }).filter(p => p.upcoming.length > 0)
+
+          if (loadingNow) return (
+            <div className="text-center py-20 text-white/60 text-xl">⏳ טוען...</div>
+          )
+
+          if (personData.length === 0) return (
+            <div className="text-center py-24" dir="rtl">
+              <div className="text-7xl mb-5">🌙</div>
+              <div className="text-white font-black text-2xl">הכל פנוי!</div>
+              <div className="text-white/50 text-sm mt-2">אין אירועים בשבוע הקרוב לאף אחד</div>
+            </div>
+          )
+
+          return (
+            <div className="max-w-xl mx-auto space-y-3 px-2 py-2" dir="rtl">
+              {/* Live clock strip */}
+              <div className="text-center text-white/40 text-xs font-bold pb-1 tracking-widest uppercase">
+                {format(new Date(), 'EEEE, d בMMMM yyyy', { locale: he })} · {format(new Date(), 'HH:mm')}
+              </div>
+
+              {personData.map(({ person, upcoming }) => (
+                <div key={person.key}
+                  className="rounded-3xl overflow-hidden shadow-xl"
+                  style={{
+                    background: 'rgba(255,255,255,0.07)',
+                    border: `1.5px solid ${person.color}55`,
+                    backdropFilter: 'blur(10px)',
+                  }}>
+                  {/* Person header */}
+                  <div className="flex items-center gap-2.5 px-4 py-2.5"
+                    style={{ background: `${person.color}22`, borderBottom: `1.5px solid ${person.color}33` }}>
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg font-black"
+                      style={{ background: person.color + '44', border: `2px solid ${person.color}77` }}>
+                      {person.emoji}
+                    </div>
+                    <span className="font-black text-white text-base">{person.name}</span>
+                    <span className="text-white/40 text-xs mr-auto">
+                      {upcoming.length === 1 ? 'אירוע קרוב' : '2 אירועים קרובים'}
+                    </span>
+                  </div>
+
+                  {/* Event rows */}
+                  {upcoming.map((ev, idx) => (
+                    <div key={ev.id}
+                      className="flex items-center gap-3 px-4 py-3"
+                      style={idx > 0 ? { borderTop: '1px solid rgba(255,255,255,0.08)' } : {}}>
+                      {/* Time column */}
+                      <div className="text-center shrink-0 w-14">
+                        <div className="text-white font-black text-xl leading-none">
+                          {ev.start_time?.slice(0,5) ?? '—'}
+                        </div>
+                        <div className="text-white/45 text-[11px] mt-0.5 font-semibold">
+                          {nowDayLabel(ev.date)}
+                        </div>
+                      </div>
+
+                      {/* Color bar */}
+                      <div className="w-0.5 h-12 rounded-full shrink-0"
+                        style={{ background: `linear-gradient(to bottom, ${person.color}, transparent)` }} />
+
+                      {/* Event info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-white font-bold text-sm leading-snug truncate">
+                          {ev.title}
+                        </div>
+                        {ev.location && (
+                          <div className="text-white/45 text-xs mt-0.5 truncate">📍 {ev.location}</div>
+                        )}
+                        {ev.notes && !ev.location && (
+                          <div className="text-white/45 text-xs mt-0.5 truncate">📝 {ev.notes}</div>
+                        )}
+                      </div>
+
+                      {/* Countdown pill */}
+                      {ev.start_time && (
+                        <div className="shrink-0 text-xs font-black px-2.5 py-1.5 rounded-xl whitespace-nowrap"
+                          style={{
+                            background: person.color + '28',
+                            color: person.color,
+                            border: `1px solid ${person.color}50`,
+                          }}>
+                          {timeUntil(ev.date, ev.start_time)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )
+        })()}
+
         {activeTab === 'links' && (
           <div className="max-w-2xl mx-auto">
             <LinksPanel
