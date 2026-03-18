@@ -1900,39 +1900,69 @@ export default function KidsSchedulePage() {
                   const evs = getPersonEvents(kid.key)
                   const nextEv = evs.filter(e => !isEventPast(e) && e.start_time).sort((a,b) => (a.start_time??'').localeCompare(b.start_time??''))[0]
                   return (
-                    <div key={kid.key} className="rounded-3xl overflow-hidden shadow-lg flex flex-col"
-                      style={{ background: theme.bg, border: `2px solid ${theme.border}44` }}>
-                      <div className="px-5 pt-5 pb-4 flex items-center gap-4 flex-row-reverse" style={{ background: theme.gradient ?? theme.headerGrad }}>
-                        <div className="flex flex-col items-center flex-shrink-0">
-                          <KidAvatar
-                            kid={kid}
-                            theme={theme}
-                            onClick={() => cycleTheme(kid.key)}
-                            customPhoto={kidPhotos[kid.key]}
-                            onEditPhoto={() => { setPhotoGalleryKid(kid.key); setShowPhotoGallery(true) }}
-                          />
-                          <div className="text-center mt-1">
-                            <span className="text-[10px] font-bold opacity-60" style={{ color: theme.textColor }}>
-                              {theme.emoji ?? '🎨'} {theme.name ?? theme.label}
-                            </span>
-                          </div>
+                    <div key={kid.key} className="rounded-3xl overflow-hidden shadow-xl flex flex-col"
+                      style={{ background: theme.cardBg, border: `2px solid ${theme.border}33` }}>
+
+                      {/* Hero header — full-width gradient with large centered photo */}
+                      <div className="relative h-48 flex flex-col items-center justify-end pb-4"
+                        style={{ background: theme.gradient ?? theme.headerGrad }}>
+                        {/* Background pattern (subtle circles) */}
+                        <div className="absolute inset-0 opacity-10 overflow-hidden pointer-events-none"
+                          style={{ background: `radial-gradient(circle at 30% 50%, white 1px, transparent 1px) 0 0 / 20px 20px` }} />
+
+                        {/* Large photo */}
+                        <button
+                          onClick={() => cycleTheme(kid.key)}
+                          className="relative w-28 h-28 rounded-full overflow-hidden shadow-2xl border-4 border-white/60 hover:scale-105 transition-transform"
+                          title="לחץ לשנות עיצוב">
+                          {(kidPhotos[kid.key] || kid.photo)
+                            ? <img src={kidPhotos[kid.key] || kid.photo!} alt={kid.name} className="w-full h-full object-cover" />
+                            : <div className="w-full h-full flex items-center justify-center text-5xl"
+                                style={{ background: theme.border + '44' }}>
+                                {kid.key === 'ami' ? '🌸' : kid.key === 'itan' ? '⚽' : '🎵'}
+                              </div>
+                          }
+                        </button>
+
+                        {/* Name + theme badge */}
+                        <div className="text-center mt-2 z-10">
+                          <div className="font-black text-2xl text-white drop-shadow-lg">{kid.name}</div>
+                          <div className="text-white/70 text-[11px] mt-0.5">{theme.emoji ?? '🎨'} {theme.name ?? theme.label}</div>
                         </div>
-                        <div className="flex-1 text-right">
-                          <div className="font-black text-2xl text-white drop-shadow">{kid.name}</div>
-                          <div className="text-white/70 text-xs mt-0.5">{evs.length===0?'יום חופשי 🎉':`${evs.length} פעילויות היום`}</div>
-                          {nextEv && nextEv.start_time && (
-                            <div className="text-white/80 text-[11px] mt-0.5 font-bold">
-                              ⏰ הבא: {nextEv.start_time.slice(0,5)} {nextEv.title}
-                            </div>
-                          )}
-                          <div className="text-white/60 text-xs mt-1">לחץ על התמונה לשנות עיצוב</div>
-                          <button onClick={() => openAddEvent(kid.key)} className="mt-2 text-xs font-black px-3 py-1 rounded-xl transition"
-                            style={{ background: 'rgba(255,255,255,0.25)', color: 'white' }}>➕ הוסף אירוע</button>
-                        </div>
+
+                        {/* Edit photo button — top left corner */}
+                        <button
+                          onClick={() => { setPhotoGalleryKid(kid.key); setShowPhotoGallery(true) }}
+                          className="absolute top-3 left-3 w-9 h-9 rounded-full bg-black/30 backdrop-blur text-white text-base flex items-center justify-center hover:bg-black/50 transition border border-white/20"
+                          title="שנה תמונה">
+                          📷
+                        </button>
                       </div>
-                      <div className="flex-1 px-3 pt-3 pb-3">
-                        {evs.length===0 ? <div className="text-center py-8 text-4xl opacity-30">🎈</div>
-                        : evs.map(ev => <EventCard key={ev.id} event={ev} theme={theme} onToggle={toggleEvent} onDelete={deleteEvent} onEdit={openEditEvent} reactions={reactions[ev.id]||[]} onReact={emoji => toggleReaction(ev.id, emoji)} isPast={isEventPast(ev)} isNext={isEventNext(ev, events)} />)}
+
+                      {/* Stats bar */}
+                      <div className="flex items-center justify-between px-4 py-2.5 border-b"
+                        style={{ background: theme.noteBg + '88', borderColor: theme.border + '22' }}>
+                        <div className="text-xs font-bold" style={{ color: theme.textColor + 'aa' }}>
+                          {evs.length === 0 ? 'יום חופשי 🎉' : `${evs.length} פעילויות היום`}
+                        </div>
+                        {nextEv && nextEv.start_time && (
+                          <div className="text-xs font-black" style={{ color: theme.accent }}>
+                            ⏰ {nextEv.start_time.slice(0,5)} {nextEv.title.slice(0,20)}
+                          </div>
+                        )}
+                        <button onClick={() => openAddEvent(kid.key)}
+                          className="text-xs font-black px-2.5 py-1 rounded-xl transition"
+                          style={{ background: theme.badgeBg, color: theme.badgeText }}>
+                          ➕ הוסף
+                        </button>
+                      </div>
+
+                      {/* Events list */}
+                      <div className="flex-1 px-3 pt-2 pb-3 space-y-2">
+                        {evs.length === 0
+                          ? <div className="text-center py-6 text-4xl opacity-20">🎈</div>
+                          : evs.map(ev => <EventCard key={ev.id} event={ev} theme={theme} onToggle={toggleEvent} onDelete={deleteEvent} onEdit={openEditEvent} reactions={reactions[ev.id]||[]} onReact={emoji => toggleReaction(ev.id, emoji)} isPast={isEventPast(ev)} isNext={isEventNext(ev, events)} />)
+                        }
                       </div>
                     </div>
                   )
@@ -2013,33 +2043,33 @@ export default function KidsSchedulePage() {
                   return (
                     <div key={parent.key} className="rounded-3xl overflow-hidden shadow-lg"
                       style={{ background: theme?.cardBg ?? '#fff', border: `2px solid ${parent.color}33` }}>
-                      {/* Header */}
-                      <div className="px-5 py-4 flex items-center gap-3"
-                        style={{ background: theme?.gradient ?? `${parent.color}18`, borderBottom: `2px solid ${parent.color}22` }}>
+                      {/* Hero header */}
+                      <div className="relative h-36 flex flex-col items-center justify-end pb-3"
+                        style={{ background: theme?.gradient ?? `${parent.color}22` }}>
+                        <div className="absolute inset-0 opacity-10 pointer-events-none"
+                          style={{ background: `radial-gradient(circle at 70% 50%, white 1px, transparent 1px) 0 0 / 20px 20px` }} />
+
+                        {/* Large photo */}
                         <button onClick={() => cycleTheme(parent.key)}
-                          className="flex-shrink-0 w-14 h-14 rounded-full overflow-hidden border-[3px] hover:scale-105 transition-transform"
-                          style={{ borderColor: parent.color }}>
+                          className="w-24 h-24 rounded-full overflow-hidden border-4 border-white/60 shadow-2xl hover:scale-105 transition-transform flex-shrink-0">
                           {photo
                             ? <img src={photo} alt={parent.name} className="w-full h-full object-cover" />
-                            : <div className="w-full h-full flex items-center justify-center text-2xl" style={{ background: parent.color + '22' }}>{parent.emoji}</div>
+                            : <div className="w-full h-full flex items-center justify-center text-4xl"
+                                style={{ background: parent.color + '22' }}>{parent.emoji}</div>
                           }
                         </button>
-                        <div className="flex-1">
-                          <div className="font-black text-xl" style={{ color: theme?.textColor ?? parent.color }}>{parent.name}</div>
-                          <div className="text-sm mt-0.5" style={{ color: (theme?.textColor ?? parent.color) + '99' }}>
-                            {evs.length > 0 ? `${evs.length} אירועים היום` : 'חופשי היום 🎉'}
-                          </div>
+                        <div className="text-center mt-1.5">
+                          <div className="font-black text-xl text-white drop-shadow">{parent.name}</div>
+                          <div className="text-white/60 text-xs">{evs.length > 0 ? `${evs.length} אירועים היום` : 'חופשי היום 🎉'}</div>
                         </div>
-                        <button
-                          onClick={() => { setPhotoGalleryKid(parent.key); setShowPhotoGallery(true) }}
-                          className="w-8 h-8 rounded-full flex items-center justify-center text-sm hover:scale-110 transition-transform border-2 border-white/50 bg-white/20"
-                          title="שנה תמונה">
+
+                        {/* Action buttons — top corners */}
+                        <button onClick={() => { setPhotoGalleryKid(parent.key); setShowPhotoGallery(true) }}
+                          className="absolute top-3 left-3 w-8 h-8 rounded-full bg-black/30 backdrop-blur text-white text-sm flex items-center justify-center hover:bg-black/50 transition border border-white/20">
                           📷
                         </button>
-                        <button
-                          onClick={() => openAddEvent(parent.key)}
-                          className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-black hover:scale-110 transition-transform border-2 border-dashed"
-                          style={{ borderColor: parent.color, color: parent.color }}>
+                        <button onClick={() => openAddEvent(parent.key)}
+                          className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/30 backdrop-blur text-white text-sm font-black flex items-center justify-center hover:bg-black/50 transition border border-white/20">
                           +
                         </button>
                       </div>

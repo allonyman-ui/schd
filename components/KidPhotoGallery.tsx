@@ -31,16 +31,81 @@ const AI_STYLES = [
   { key: 'sticker', label: '🌟 מדבקה' },
 ]
 
+const ALL_PEOPLE = [
+  { key: 'ami', name: 'אמי', color: '#E91E63' },
+  { key: 'alex', name: 'אלכס', color: '#8E24AA' },
+  { key: 'itan', name: 'איתן', color: '#43A047' },
+  { key: 'assaf', name: 'אסף', color: '#1D4ED8' },
+  { key: 'danil', name: 'דניאל', color: '#15803D' },
+]
+
+// ── AI Image Card ──────────────────────────────────────────────────────────────
+
+function AIImageCard({ url, fallbackUrl, onKeep, onSkip }: {
+  url: string; fallbackUrl?: string; onKeep: () => void; onSkip: () => void
+}) {
+  const [loaded, setLoaded] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const [src, setSrc] = useState(url)
+
+  function handleError() {
+    if (src === url && fallbackUrl) {
+      setSrc(fallbackUrl) // retry with fallback model
+    } else {
+      setFailed(true)
+    }
+  }
+
+  if (failed) return (
+    <div className="aspect-square rounded-2xl bg-gray-100 flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300">
+      <span className="text-3xl">😔</span>
+      <span className="text-xs text-gray-400 text-center px-2">לא ניתן לטעון<br/>נסה שוב</span>
+      <button onClick={onSkip} className="text-xs text-gray-400 underline">דלג</button>
+    </div>
+  )
+
+  return (
+    <div className="relative rounded-2xl overflow-hidden border-2 border-purple-200 shadow-md">
+      {!loaded && (
+        <div className="absolute inset-0 bg-gradient-to-br from-purple-100 to-blue-100 animate-pulse flex items-center justify-center">
+          <span className="text-4xl animate-spin">✨</span>
+        </div>
+      )}
+      <img
+        src={src}
+        alt="AI variant"
+        className={`w-full aspect-square object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        onLoad={() => setLoaded(true)}
+        onError={handleError}
+      />
+      <div className="flex gap-2 p-2 bg-white/95 border-t border-gray-100">
+        <button onClick={onKeep} className="flex-1 py-2 bg-green-500 text-white text-xs font-black rounded-xl">✅ שמור</button>
+        <button onClick={onSkip} className="flex-1 py-2 bg-red-400 text-white text-xs font-black rounded-xl">✕ דלג</button>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Component ─────────────────────────────────────────────────────────────
+
 export default function KidPhotoGallery({ kid, onClose, onProfileChanged }: Props) {
   const [photos, setPhotos] = useState<GalleryPhoto[]>([])
   const [loading, setLoading] = useState(true)
   const [aiStyle, setAiStyle] = useState('cute cartoon')
   const [generating, setGenerating] = useState(false)
   const [variants, setVariants] = useState<string[]>([])
+  const [fallbacks, setFallbacks] = useState<string[]>([])
   const [aiPrompt, setAiPrompt] = useState('')
   const [uploading, setUploading] = useState(false)
   const [editingPhoto, setEditingPhoto] = useState<string | null>(null)
+  const [batchFiles, setBatchFiles] = useState<Array<{file: File; objectUrl: string; assignTo: string}>>([])
+  const [batchUploading, setBatchUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const folderRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (folderRef.current) folderRef.current.setAttribute('webkitdirectory', '')
+  }, [])
 
   const loadPhotos = useCallback(async () => {
     setLoading(true)
@@ -55,6 +120,7 @@ export default function KidPhotoGallery({ kid, onClose, onProfileChanged }: Prop
   async function generateAI() {
     setGenerating(true)
     setVariants([])
+    setFallbacks([])
     try {
       const res = await fetch('/api/generate-kid-image', {
         method: 'POST',
@@ -63,11 +129,12 @@ export default function KidPhotoGallery({ kid, onClose, onProfileChanged }: Prop
       })
       const data = await res.json()
       setVariants(data.variants || [])
+      setFallbacks(data.fallbacks || [])
       setAiPrompt(data.prompt || '')
     } finally { setGenerating(false) }
   }
 
-  async function keepVariant(url: string) {
+  async function keepVariant(url: string, index: number) {
     const res = await fetch('/api/kid-profiles', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -77,9 +144,14 @@ export default function KidPhotoGallery({ kid, onClose, onProfileChanged }: Prop
       const newPhoto = await res.json()
       setPhotos(prev => [newPhoto, ...prev])
       if (photos.length === 0) onProfileChanged(kid.key, url)
-      // Remove from variants
-      setVariants(prev => prev.filter(v => v !== url))
+      setVariants(prev => prev.filter((_, j) => j !== index))
+      setFallbacks(prev => prev.filter((_, j) => j !== index))
     }
+  }
+
+  function skipVariant(index: number) {
+    setVariants(prev => prev.filter((_, j) => j !== index))
+    setFallbacks(prev => prev.filter((_, j) => j !== index))
   }
 
   async function setAsProfile(photo: GalleryPhoto) {
@@ -96,7 +168,6 @@ export default function KidPhotoGallery({ kid, onClose, onProfileChanged }: Prop
     await fetch(`/api/kid-profiles?id=${photo.id}`, { method: 'DELETE' })
     setPhotos(prev => {
       const remaining = prev.filter(p => p.id !== photo.id)
-      // If deleted was the profile, set first remaining as profile
       if (photo.is_profile && remaining.length > 0) {
         setAsProfile(remaining[0])
       }
@@ -124,6 +195,37 @@ export default function KidPhotoGallery({ kid, onClose, onProfileChanged }: Prop
         }
       }
     } finally { setUploading(false) }
+  }
+
+  function onMultiFileSelect(files: FileList) {
+    const items = Array.from(files).filter(f => f.type.startsWith('image/')).map(f => ({
+      file: f,
+      objectUrl: URL.createObjectURL(f),
+      assignTo: kid.key,
+    }))
+    setBatchFiles(items)
+  }
+
+  async function uploadBatch() {
+    setBatchUploading(true)
+    try {
+      for (const item of batchFiles) {
+        const fd = new FormData()
+        fd.append('file', item.file)
+        const res = await fetch('/api/upload', { method: 'POST', body: fd })
+        if (res.ok) {
+          const { url } = await res.json()
+          await fetch('/api/kid-profiles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kid_key: item.assignTo, photo_url: url }),
+          })
+        }
+      }
+      batchFiles.forEach(f => URL.revokeObjectURL(f.objectUrl))
+      setBatchFiles([])
+      await loadPhotos()
+    } finally { setBatchUploading(false) }
   }
 
   return (
@@ -157,7 +259,7 @@ export default function KidPhotoGallery({ kid, onClose, onProfileChanged }: Prop
               style={{ background: generating ? '#ccc' : 'linear-gradient(135deg,#667eea,#764ba2)' }}>
               {generating ? (
                 <><span className="animate-spin">⏳</span> יוצר תמונות איכותיות...</>
-              ) : '✨ צור 4 תמונות AI'}
+              ) : '✨ צור 6 תמונות AI'}
             </button>
             {aiPrompt && <p className="text-[10px] text-purple-500 mt-2 leading-relaxed">{aiPrompt}</p>}
           </div>
@@ -168,39 +270,81 @@ export default function KidPhotoGallery({ kid, onClose, onProfileChanged }: Prop
               <p className="font-black text-gray-700 text-sm mb-3">👆 שמור תמונות שאהבת</p>
               <div className="grid grid-cols-2 gap-3">
                 {variants.map((url, i) => (
-                  <div key={i} className="relative rounded-2xl overflow-hidden border-2 border-purple-200 shadow-md group">
-                    <img src={url} alt={`variant ${i+1}`} className="w-full aspect-square object-cover"
-                      onError={e => { (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23f0f0f0" width="100" height="100"/><text y="50" x="50" text-anchor="middle" dominant-baseline="middle" font-size="30">⏳</text></svg>' }} />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-3 gap-2">
-                      <button onClick={() => keepVariant(url)}
-                        className="px-4 py-2 bg-green-500 text-white text-xs font-black rounded-xl hover:bg-green-600 transition shadow-lg">
-                        ✅ שמור
-                      </button>
-                      <button onClick={() => setVariants(prev => prev.filter((_, j) => j !== i))}
-                        className="px-4 py-2 bg-red-500 text-white text-xs font-black rounded-xl hover:bg-red-600 transition shadow-lg">
-                        ✕ דלג
-                      </button>
-                    </div>
-                    {/* Always-visible buttons on mobile */}
-                    <div className="flex gap-2 p-2 bg-white/95 sm:hidden">
-                      <button onClick={() => keepVariant(url)} className="flex-1 py-1.5 bg-green-500 text-white text-xs font-black rounded-xl">✅ שמור</button>
-                      <button onClick={() => setVariants(prev => prev.filter((_, j) => j !== i))} className="flex-1 py-1.5 bg-red-400 text-white text-xs font-black rounded-xl">✕ דלג</button>
-                    </div>
-                  </div>
+                  <AIImageCard
+                    key={`${url}-${i}`}
+                    url={url}
+                    fallbackUrl={fallbacks[i]}
+                    onKeep={() => keepVariant(url, i)}
+                    onSkip={() => skipVariant(i)}
+                  />
                 ))}
               </div>
             </div>
           )}
 
-          {/* Upload */}
-          <div>
+          {/* Upload — single and folder/multi */}
+          <div className="space-y-2">
+            {/* Single file input */}
             <input type="file" accept="image/*" className="hidden" ref={fileRef}
               onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f) }} />
-            <button onClick={() => fileRef.current?.click()} disabled={uploading}
-              className="w-full py-3 rounded-2xl border-2 border-dashed border-gray-300 text-gray-600 font-bold text-sm hover:border-purple-400 hover:text-purple-600 transition disabled:opacity-50">
-              {uploading ? '⏳ מעלה...' : '📷 העלה תמונה מהמכשיר'}
-            </button>
+            {/* Multi file input */}
+            <input type="file" multiple accept="image/*" className="hidden" ref={folderRef}
+              onChange={e => { if (e.target.files && e.target.files.length > 0) onMultiFileSelect(e.target.files) }} />
+
+            <div className="flex gap-2">
+              <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                className="flex-1 py-3 rounded-2xl border-2 border-dashed border-gray-300 text-gray-600 font-bold text-sm hover:border-purple-400 hover:text-purple-600 transition disabled:opacity-50">
+                {uploading ? '⏳ מעלה...' : '📷 תמונה אחת'}
+              </button>
+              <button onClick={() => folderRef.current?.click()} disabled={uploading || batchUploading}
+                className="flex-1 py-3 rounded-2xl border-2 border-dashed border-blue-300 text-blue-600 font-bold text-sm hover:border-blue-500 hover:text-blue-700 transition disabled:opacity-50">
+                📁 העלה תיקיה / מספר תמונות
+              </button>
+            </div>
           </div>
+
+          {/* Batch Assignment UI */}
+          {batchFiles.length > 0 && (
+            <div className="bg-blue-50 rounded-2xl p-4 border border-blue-200">
+              <p className="font-black text-blue-800 text-sm mb-3">📁 הקצאת תמונות ({batchFiles.length})</p>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                {batchFiles.map((item, i) => (
+                  <div key={i} className="rounded-xl overflow-hidden border border-blue-200 shadow-sm">
+                    <img src={item.objectUrl} alt={item.file.name} className="w-full aspect-square object-cover" />
+                    <div className="p-2 bg-white">
+                      <p className="text-[10px] text-gray-500 truncate mb-1.5">{item.file.name}</p>
+                      <div className="flex flex-wrap gap-1">
+                        {ALL_PEOPLE.map(person => (
+                          <button
+                            key={person.key}
+                            onClick={() => setBatchFiles(prev => prev.map((f, j) => j === i ? { ...f, assignTo: person.key } : f))}
+                            className="px-2 py-0.5 rounded-full text-[10px] font-bold transition border"
+                            style={{
+                              background: item.assignTo === person.key ? person.color : 'transparent',
+                              color: item.assignTo === person.key ? 'white' : person.color,
+                              borderColor: person.color,
+                            }}>
+                            {person.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={uploadBatch} disabled={batchUploading}
+                  className="flex-1 py-2.5 bg-green-500 text-white text-sm font-black rounded-xl disabled:opacity-50">
+                  {batchUploading ? '⏳ מעלה...' : '✅ שמור הכל'}
+                </button>
+                <button onClick={() => { batchFiles.forEach(f => URL.revokeObjectURL(f.objectUrl)); setBatchFiles([]) }}
+                  disabled={batchUploading}
+                  className="flex-1 py-2.5 bg-gray-200 text-gray-600 text-sm font-black rounded-xl disabled:opacity-50">
+                  ✕ ביטול
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Saved Gallery */}
           {loading ? (
@@ -338,7 +482,6 @@ function KidPaintEditor({ imageUrl, onSave, onClose }: PaintProps) {
     e.preventDefault()
     const canvas = canvasRef.current!
     const ctx = canvas.getContext('2d')!
-    // Save state before drawing
     setHistory(prev => [...prev.slice(-15), ctx.getImageData(0, 0, canvas.width, canvas.height)])
     setDrawing(true)
     lastPos.current = getPos(e)

@@ -34,9 +34,13 @@ Return ONLY the prompt text (no explanation, no quotes), max 120 words. Write in
   const encodedPrompt = encodeURIComponent(prompt)
   const baseSeed = Math.floor(Math.random() * 99999)
 
-  const variants = [0, 1, 2, 3].map(i =>
-    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&seed=${baseSeed + i * 137}&nologo=true&enhance=true`
+  const variants = [0, 1, 2, 3, 4, 5].map(i =>
+    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=768&model=turbo&seed=${baseSeed + i * 137}&nologo=true`
   )
 
-  return NextResponse.json({ prompt, variants })
+  const fallbacks = [0, 1, 2, 3, 4, 5].map(i =>
+    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=768&model=sana&seed=${baseSeed + i * 137}&nologo=true`
+  )
+
+  return NextResponse.json({ prompt, variants, fallbacks })
 }
