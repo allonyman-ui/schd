@@ -1256,11 +1256,12 @@ export default function KidsSchedulePage() {
   useEffect(() => { loadReminders() }, [loadReminders])
   useEffect(() => { loadGroceries() }, [loadGroceries])
   useEffect(() => { loadLinks() }, [loadLinks])
+  useEffect(() => { loadNowEvents() }, [loadNowEvents])   // load on mount so data is ready
 
-  // Load + auto-refresh the Now view every minute
+  // Reload + auto-refresh whenever Now tab is active
   useEffect(() => {
     if (activeTab === 'now') loadNowEvents()
-  }, [activeTab, loadNowEvents])
+  }, [activeTab]) // eslint-disable-line
   useEffect(() => {
     const id = setInterval(() => { if (activeTab === 'now') loadNowEvents() }, 60_000)
     return () => clearInterval(id)
@@ -1977,111 +1978,152 @@ export default function KidsSchedulePage() {
         {/* ── LINKS TAB ──────────────────────────────────────────────── */}
         {/* ── NOW TAB ─────────────────────────────────────────────────── */}
         {activeTab === 'now' && (() => {
-          const nowStr   = format(new Date(), 'HH:mm')
-          const todayNow = format(new Date(), 'yyyy-MM-dd')
+          const nowDt     = new Date()
+          const nowStr    = format(nowDt, 'HH:mm')
+          const todayNow  = format(nowDt, 'yyyy-MM-dd')
+          const tmrwNow   = format(addDays(nowDt, 1), 'yyyy-MM-dd')
+          const DAY_EN    = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
 
-          const personData = FAMILY_PEOPLE.map(person => {
-            const upcoming = nowEvents
-              .filter(ev => {
-                if (ev.person !== person.key) return false
-                if (!ev.start_time) return false
-                if (ev.date === todayNow) return ev.start_time.slice(0, 5) >= nowStr
-                return ev.date > todayNow
-              })
-              .sort((a, b) =>
-                a.date !== b.date
-                  ? a.date.localeCompare(b.date)
-                  : (a.start_time ?? '').localeCompare(b.start_time ?? '')
-              )
-              .slice(0, 2)
-            return { person, upcoming }
-          }).filter(p => p.upcoming.length > 0)
+          // Expand recurring events into concrete daily occurrences for next 7 days
+          const expanded: (Event & { _occDate: string })[] = []
+          for (let d = 0; d < 7; d++) {
+            const dt      = addDays(nowDt, d)
+            const dateStr = format(dt, 'yyyy-MM-dd')
+            const dayName = DAY_EN[dt.getDay()]
+            for (const ev of nowEvents) {
+              if (!ev.is_recurring) {
+                if (ev.date === dateStr) expanded.push({ ...ev, _occDate: dateStr })
+              } else if (ev.recurrence_days?.includes(dayName)) {
+                expanded.push({ ...ev, date: dateStr, _occDate: dateStr })
+              }
+            }
+          }
+
+          // Filter to only upcoming (after now), sort by date+time
+          const allUpcoming = expanded
+            .filter(ev => {
+              if (ev._occDate === todayNow) {
+                if (!ev.start_time) return true          // all-day → always show today
+                return ev.start_time.slice(0, 5) >= nowStr
+              }
+              return ev._occDate > todayNow
+            })
+            .sort((a, b) => {
+              if (a._occDate !== b._occDate) return a._occDate.localeCompare(b._occDate)
+              if (!a.start_time) return -1
+              if (!b.start_time) return 1
+              return a.start_time.localeCompare(b.start_time)
+            })
+
+          const personData = FAMILY_PEOPLE.map(p => ({
+            person: p,
+            upcoming: allUpcoming.filter(ev => ev.person === p.key).slice(0, 2),
+          })).filter(p => p.upcoming.length > 0)
 
           if (loadingNow) return (
-            <div className="text-center py-20 text-white/60 text-xl">⏳ טוען...</div>
+            <div className="flex flex-col items-center justify-center py-28 gap-4">
+              <div className="w-10 h-10 border-4 border-white/20 border-t-white rounded-full animate-spin" />
+              <div className="text-white/50 font-bold text-sm">טוען אירועים...</div>
+            </div>
           )
 
           if (personData.length === 0) return (
-            <div className="text-center py-24" dir="rtl">
-              <div className="text-7xl mb-5">🌙</div>
+            <div className="text-center py-28" dir="rtl">
+              <div className="text-7xl mb-4">🌙</div>
               <div className="text-white font-black text-2xl">הכל פנוי!</div>
-              <div className="text-white/50 text-sm mt-2">אין אירועים בשבוע הקרוב לאף אחד</div>
+              <div className="text-white/40 text-sm mt-2">אין אירועים בשבוע הקרוב לאף אחד</div>
             </div>
           )
 
           return (
-            <div className="max-w-xl mx-auto space-y-3 px-2 py-2" dir="rtl">
-              {/* Live clock strip */}
-              <div className="text-center text-white/40 text-xs font-bold pb-1 tracking-widest uppercase">
-                {format(new Date(), 'EEEE, d בMMMM yyyy', { locale: he })} · {format(new Date(), 'HH:mm')}
+            <div className="max-w-xl mx-auto space-y-3 px-2 pt-1 pb-4" dir="rtl">
+
+              {/* Date/time strip */}
+              <div className="flex items-center gap-2 px-1 py-1">
+                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+                <span className="text-white/45 text-xs font-bold">
+                  {format(nowDt, 'EEEE, d בMMMM', { locale: he })} · {nowStr}
+                </span>
               </div>
 
               {personData.map(({ person, upcoming }) => (
                 <div key={person.key}
-                  className="rounded-3xl overflow-hidden shadow-xl"
-                  style={{
-                    background: 'rgba(255,255,255,0.07)',
-                    border: `1.5px solid ${person.color}55`,
-                    backdropFilter: 'blur(10px)',
-                  }}>
+                  className="rounded-3xl overflow-hidden shadow-2xl"
+                  style={{ background: 'rgba(20,20,35,0.7)', border: `2px solid ${person.color}55`, backdropFilter: 'blur(16px)' }}>
+
                   {/* Person header */}
-                  <div className="flex items-center gap-2.5 px-4 py-2.5"
-                    style={{ background: `${person.color}22`, borderBottom: `1.5px solid ${person.color}33` }}>
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg font-black"
-                      style={{ background: person.color + '44', border: `2px solid ${person.color}77` }}>
+                  <div className="flex items-center gap-3 px-5 py-3"
+                    style={{ background: `${person.color}22`, borderBottom: `1px solid ${person.color}33` }}>
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-xl flex-shrink-0"
+                      style={{ background: person.color + '33', border: `2px solid ${person.color}66` }}>
                       {person.emoji}
                     </div>
-                    <span className="font-black text-white text-base">{person.name}</span>
-                    <span className="text-white/40 text-xs mr-auto">
-                      {upcoming.length === 1 ? 'אירוע קרוב' : '2 אירועים קרובים'}
+                    <span className="font-black text-white text-lg">{person.name}</span>
+                    <span className="mr-auto text-[11px] font-bold px-2 py-0.5 rounded-full"
+                      style={{ background: person.color + '25', color: person.color }}>
+                      {upcoming.length === 1 ? '1 קרוב' : '2 קרובים'}
                     </span>
                   </div>
 
                   {/* Event rows */}
-                  {upcoming.map((ev, idx) => (
-                    <div key={ev.id}
-                      className="flex items-center gap-3 px-4 py-3"
-                      style={idx > 0 ? { borderTop: '1px solid rgba(255,255,255,0.08)' } : {}}>
-                      {/* Time column */}
-                      <div className="text-center shrink-0 w-14">
-                        <div className="text-white font-black text-xl leading-none">
-                          {ev.start_time?.slice(0,5) ?? '—'}
-                        </div>
-                        <div className="text-white/45 text-[11px] mt-0.5 font-semibold">
-                          {nowDayLabel(ev.date)}
+                  {upcoming.map((ev, idx) => {
+                    const isToday = ev._occDate === todayNow
+                    const isTmrw  = ev._occDate === tmrwNow
+                    const dayTag  = isToday ? 'היום' : isTmrw ? 'מחר'
+                                  : format(new Date(ev._occDate + 'T12:00:00'), 'EEE d/M', { locale: he })
+                    const until   = ev.start_time ? timeUntil(ev._occDate, ev.start_time) : null
+
+                    return (
+                      <div key={ev.id + ev._occDate}
+                        className="px-5 py-4"
+                        style={idx > 0 ? { borderTop: '1px solid rgba(255,255,255,0.07)' } : {}}>
+                        <div className="flex items-start gap-4">
+
+                          {/* Time block */}
+                          <div className="shrink-0 text-center w-16">
+                            <div className="text-white font-black text-2xl leading-none tabular-nums">
+                              {ev.start_time ? ev.start_time.slice(0, 5) : '📅'}
+                            </div>
+                            <div className="mt-1.5 text-[11px] font-black px-2 py-0.5 rounded-lg"
+                              style={{ background: person.color + '30', color: person.color }}>
+                              {dayTag}
+                            </div>
+                          </div>
+
+                          {/* Gradient bar */}
+                          <div className="w-0.5 self-stretch rounded-full flex-shrink-0"
+                            style={{ background: `linear-gradient(to bottom, ${person.color}cc, ${person.color}11)` }} />
+
+                          {/* Details */}
+                          <div className="flex-1 min-w-0">
+                            <div className="text-white font-black text-base leading-snug">
+                              {ev.title}
+                              {ev.is_recurring && (
+                                <span className="text-white/35 text-xs font-normal mr-1.5">🔁</span>
+                              )}
+                            </div>
+                            {ev.location && (
+                              <div className="flex items-center gap-1 mt-1.5 text-white/55 text-sm">
+                                <span className="flex-shrink-0">📍</span>
+                                <span className="truncate">{ev.location}</span>
+                              </div>
+                            )}
+                            {ev.notes && !ev.location && (
+                              <div className="mt-1.5 text-white/45 text-sm truncate">
+                                💬 {ev.notes}
+                              </div>
+                            )}
+                            {until && (
+                              <div className="inline-flex items-center gap-1 mt-2 text-xs font-black px-3 py-1 rounded-full"
+                                style={{ background: person.color + '22', color: person.color, border: `1px solid ${person.color}44` }}>
+                                ⏰ {until}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
-
-                      {/* Color bar */}
-                      <div className="w-0.5 h-12 rounded-full shrink-0"
-                        style={{ background: `linear-gradient(to bottom, ${person.color}, transparent)` }} />
-
-                      {/* Event info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-white font-bold text-sm leading-snug truncate">
-                          {ev.title}
-                        </div>
-                        {ev.location && (
-                          <div className="text-white/45 text-xs mt-0.5 truncate">📍 {ev.location}</div>
-                        )}
-                        {ev.notes && !ev.location && (
-                          <div className="text-white/45 text-xs mt-0.5 truncate">📝 {ev.notes}</div>
-                        )}
-                      </div>
-
-                      {/* Countdown pill */}
-                      {ev.start_time && (
-                        <div className="shrink-0 text-xs font-black px-2.5 py-1.5 rounded-xl whitespace-nowrap"
-                          style={{
-                            background: person.color + '28',
-                            color: person.color,
-                            border: `1px solid ${person.color}50`,
-                          }}>
-                          {timeUntil(ev.date, ev.start_time)}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               ))}
             </div>
