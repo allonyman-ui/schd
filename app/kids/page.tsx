@@ -172,10 +172,9 @@ const FAMILY_PEOPLE = [
   { key: 'danil', name: 'דניאל',  color: '#15803D', photo: null, emoji: '🌿' },
 ]
 
-type TabKey = 'now' | 'family' | 'kids' | 'assaf' | 'danil' | 'links'
+type TabKey = 'now' | 'kids' | 'assaf' | 'danil' | 'links'
 const TABS = [
   { key: 'now'    as TabKey, label: '⏰ עכשיו' },
-  { key: 'family' as TabKey, label: '🏠 משפחה' },
   { key: 'kids'   as TabKey, label: '👧👦 ילדים' },
   { key: 'assaf'  as TabKey, label: '💼 אסף' },
   { key: 'danil'  as TabKey, label: '🌿 דניאל' },
@@ -1151,6 +1150,7 @@ export default function KidsSchedulePage() {
   // Now view
   const [nowEvents, setNowEvents] = useState<Event[]>([])
   const [loadingNow, setLoadingNow] = useState(false)
+  const [expandedNowPerson, setExpandedNowPerson] = useState<string | null>(null)
 
   // Event modal
   const [showModal, setShowModal] = useState(false)
@@ -1514,10 +1514,11 @@ export default function KidsSchedulePage() {
   }
 
   function nowDayLabel(eventDate: string): string {
-    const today = format(new Date(), 'yyyy-MM-dd')
+    const today    = format(new Date(), 'yyyy-MM-dd')
     const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd')
-    if (eventDate === today) return 'היום'
-    if (eventDate === tomorrow) return 'מחר'
+    // Always show actual Hebrew day name; add date for events beyond tomorrow
+    if (eventDate === today || eventDate === tomorrow)
+      return format(new Date(eventDate + 'T12:00:00'), 'EEEE', { locale: he })
     return format(new Date(eventDate + 'T12:00:00'), 'EEEE d/M', { locale: he })
   }
 
@@ -1795,56 +1796,6 @@ export default function KidsSchedulePage() {
         </div>
 
         {/* ── FAMILY TAB ─────────────────────────────────────────────── */}
-        {activeTab === 'family' && (
-          <div className="max-w-4xl mx-auto">
-            <div className="bg-white rounded-3xl shadow-lg overflow-hidden border border-gray-100">
-              {FAMILY_PEOPLE.map((person, idx) => {
-                const evs = getPersonEvents(person.key)
-                return (
-                  <div key={person.key} className={`flex items-stretch flex-row-reverse min-h-[80px] ${idx>0?'border-t border-gray-100':''}`}>
-                    <div className="flex-shrink-0 w-32 sm:w-40 flex flex-col items-center justify-center py-3 px-2 gap-2"
-                      style={{ background: `${person.color}12`, borderRight: `5px solid ${person.color}` }}>
-                      {person.photo
-                        ? <img src={person.photo} alt={person.name} className="w-14 h-14 rounded-full object-cover shadow-sm" style={{ border: `3px solid ${person.color}` }} />
-                        : <div className="w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-sm" style={{ background: `${person.color}22`, border: `3px solid ${person.color}` }}>{person.emoji}</div>
-                      }
-                      <div className="text-center">
-                        <div className="font-black text-sm" style={{ color: person.color }}>{person.name}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">{evs.length>0?`${evs.length} אירועים`:'חופשי'}</div>
-                      </div>
-                    </div>
-                    <div className={`flex-1 px-4 py-3 flex flex-wrap gap-2 items-center content-center ${evs.length===0?'opacity-50':''}`}>
-                      {evs.length===0 ? (
-                        <div className="flex items-center gap-2 text-gray-400"><span className="text-xl">🎉</span><span className="text-sm font-medium">אין אירועים היום</span></div>
-                      ) : evs.map(ev => (
-                        <div key={ev.id} className="rounded-2xl overflow-hidden shadow-sm flex-shrink-0 max-w-[200px] group/ev relative"
-                          style={{ border: `1.5px solid ${person.color}44` }}>
-                          {ev.start_time && (
-                            <div className="px-2.5 py-0.5 text-xs font-black text-white text-center" dir="ltr" style={{ background: person.color }}>
-                              {ev.start_time.slice(0,5)}{ev.end_time?` – ${ev.end_time.slice(0,5)}`:''}
-                            </div>
-                          )}
-                          <div className="px-2.5 py-2 bg-white">
-                            <div className="font-bold text-sm text-gray-800 text-right leading-snug">{ev.title}</div>
-                            {ev.location && <div className="text-xs text-gray-500 text-right mt-0.5 flex items-center gap-1 flex-row-reverse"><span>📍</span><span className="truncate">{ev.location}</span></div>}
-                            {ev.notes && <div className="text-xs text-amber-700 rounded-lg px-1.5 py-0.5 mt-1 text-right leading-snug" style={{ background: '#FEF3C7' }}>📝 {ev.notes}</div>}
-                          </div>
-                          <div className="absolute top-1 left-1 hidden group-hover/ev:flex gap-0.5">
-                            <button onClick={() => openEditEvent(ev)} className="w-5 h-5 rounded-full bg-white shadow text-xs flex items-center justify-center hover:bg-blue-50">✏️</button>
-                            <button onClick={() => deleteEvent(ev.id)} className="w-5 h-5 rounded-full bg-white shadow text-xs flex items-center justify-center hover:bg-red-50">🗑️</button>
-                          </div>
-                        </div>
-                      ))}
-                      <button onClick={() => openAddEvent(person.key)}
-                        className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-black transition-all opacity-30 hover:opacity-100 border-2 border-dashed"
-                        style={{ borderColor: person.color, color: person.color }} title={`הוסף אירוע ל${person.name}`}>+</button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
 
 
         {/* ── KIDS TAB ───────────────────────────────────────────────── */}
@@ -2015,9 +1966,19 @@ export default function KidsSchedulePage() {
               return a.start_time.localeCompare(b.start_time)
             })
 
+          // All of today's events per person (past + future), sorted by time
+          const allTodayExpanded = expanded
+            .filter(ev => ev._occDate === todayNow)
+            .sort((a, b) => {
+              if (!a.start_time) return -1
+              if (!b.start_time) return 1
+              return a.start_time.localeCompare(b.start_time)
+            })
+
           const personData = FAMILY_PEOPLE.map(p => ({
             person: p,
             upcoming: allUpcoming.filter(ev => ev.person === p.key).slice(0, 2),
+            allToday: allTodayExpanded.filter(ev => ev.person === p.key),
           })).filter(p => p.upcoming.length > 0)
 
           if (loadingNow) return (
@@ -2046,14 +2007,18 @@ export default function KidsSchedulePage() {
                 </span>
               </div>
 
-              {personData.map(({ person, upcoming }) => (
+              {personData.map(({ person, upcoming, allToday }) => {
+                const isExpanded = expandedNowPerson === person.key
+                return (
                 <div key={person.key}
                   className="rounded-3xl overflow-hidden shadow-2xl"
-                  style={{ background: 'rgba(20,20,35,0.7)', border: `2px solid ${person.color}55`, backdropFilter: 'blur(16px)' }}>
+                  style={{ background: 'rgba(20,20,35,0.7)', border: `2px solid ${isExpanded ? person.color + 'aa' : person.color + '55'}`, backdropFilter: 'blur(16px)', transition: 'border-color 0.2s' }}>
 
-                  {/* Person header */}
-                  <div className="flex items-center gap-3 px-5 py-3"
-                    style={{ background: `${person.color}22`, borderBottom: `1px solid ${person.color}33` }}>
+                  {/* Person header — clickable to expand full day */}
+                  <button
+                    className="w-full flex items-center gap-3 px-5 py-3 text-right transition-all active:opacity-70"
+                    style={{ background: `${person.color}${isExpanded ? '35' : '22'}`, borderBottom: `1px solid ${person.color}33` }}
+                    onClick={() => setExpandedNowPerson(isExpanded ? null : person.key)}>
                     <div className="w-9 h-9 rounded-full flex items-center justify-center text-xl flex-shrink-0"
                       style={{ background: person.color + '33', border: `2px solid ${person.color}66` }}>
                       {person.emoji}
@@ -2063,14 +2028,22 @@ export default function KidsSchedulePage() {
                       style={{ background: person.color + '25', color: person.color }}>
                       {upcoming.length === 1 ? '1 קרוב' : '2 קרובים'}
                     </span>
-                  </div>
+                    {allToday.length > 0 && (
+                      <span className="text-white/40 text-sm transition-transform duration-200"
+                        style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                        ▾
+                      </span>
+                    )}
+                  </button>
 
-                  {/* Event rows */}
+                  {/* Upcoming events (next 2) */}
                   {upcoming.map((ev, idx) => {
                     const isToday = ev._occDate === todayNow
                     const isTmrw  = ev._occDate === tmrwNow
-                    const dayTag  = isToday ? 'היום' : isTmrw ? 'מחר'
-                                  : format(new Date(ev._occDate + 'T12:00:00'), 'EEE d/M', { locale: he })
+                    // Always show actual day name; add date for events beyond tomorrow
+                    const dayTag  = (isToday || isTmrw)
+                                  ? format(new Date(ev._occDate + 'T12:00:00'), 'EEEE', { locale: he })
+                                  : format(new Date(ev._occDate + 'T12:00:00'), 'EEEE d/M', { locale: he })
                     const until   = ev.start_time ? timeUntil(ev._occDate, ev.start_time) : null
 
                     return (
@@ -2124,8 +2097,65 @@ export default function KidsSchedulePage() {
                       </div>
                     )
                   })}
+
+                  {/* ── Foldable full-day view ───────────────────────── */}
+                  {isExpanded && allToday.length > 0 && (
+                    <div style={{ borderTop: `1px solid ${person.color}33` }}>
+                      <div className="flex items-center gap-2 px-5 py-2"
+                        style={{ background: person.color + '15' }}>
+                        <span className="text-xs font-black" style={{ color: person.color }}>
+                          📅 כל אירועי היום — {format(new Date(todayNow + 'T12:00:00'), 'EEEE d בMMMM', { locale: he })}
+                        </span>
+                        <span className="mr-auto text-white/30 text-xs">{allToday.length} אירועים</span>
+                      </div>
+
+                      {allToday.map((ev, idx) => {
+                        const isPastEv = ev.start_time ? ev.start_time.slice(0,5) < nowStr : false
+                        const isNowEv  = !isPastEv && ev.start_time
+                          ? ev.start_time.slice(0,5) <= nowStr && (ev.end_time ? ev.end_time.slice(0,5) > nowStr : ev.start_time.slice(0,5) === nowStr)
+                          : false
+
+                        return (
+                          <div key={ev.id + '_full_' + idx}
+                            className="flex items-center gap-3 px-5 py-2.5"
+                            style={{
+                              borderTop: idx > 0 ? '1px solid rgba(255,255,255,0.05)' : undefined,
+                              opacity: isPastEv ? 0.4 : 1,
+                            }}>
+                            {/* Time */}
+                            <div className="shrink-0 w-12 text-center">
+                              {isNowEv && <div className="w-2 h-2 rounded-full mx-auto mb-0.5 animate-pulse" style={{ background: person.color }} />}
+                              <div className="font-black tabular-nums leading-none text-sm"
+                                style={{ color: isNowEv ? person.color : 'rgba(255,255,255,0.7)', textDecoration: isPastEv ? 'line-through' : undefined }}>
+                                {ev.start_time ? ev.start_time.slice(0,5) : '📅'}
+                              </div>
+                              {ev.end_time && <div className="text-[10px] text-white/25 mt-0.5 tabular-nums">{ev.end_time.slice(0,5)}</div>}
+                            </div>
+                            {/* Dot */}
+                            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                              style={{ background: isNowEv ? person.color : 'rgba(255,255,255,0.2)' }} />
+                            {/* Title */}
+                            <div className="flex-1 min-w-0">
+                              <div className={`leading-snug truncate text-sm ${isNowEv ? 'font-black text-white' : 'font-semibold text-white/75'}`}
+                                style={{ textDecoration: isPastEv ? 'line-through' : undefined }}>
+                                {ev.title}
+                                {ev.is_recurring && <span className="text-white/25 text-xs mr-1">🔁</span>}
+                              </div>
+                              {ev.location && <div className="text-white/35 text-xs truncate mt-0.5">📍 {ev.location}</div>}
+                            </div>
+                            {isNowEv && (
+                              <div className="shrink-0 text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse"
+                                style={{ background: person.color + '33', color: person.color, border: `1px solid ${person.color}66` }}>
+                                עכשיו
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
-              ))}
+              )})}
             </div>
           )
         })()}
