@@ -5,6 +5,7 @@ import { format, addDays, subDays } from 'date-fns'
 import { he } from 'date-fns/locale'
 import WeatherWidget from '@/components/WeatherWidget'
 import VideoSummaryModal from '@/components/VideoSummaryModal'
+import KidPhotoGallery from '@/components/KidPhotoGallery'
 
 interface Event {
   id: string; title: string; person: string; date: string
@@ -1142,14 +1143,8 @@ export default function KidsSchedulePage() {
 
   // Kid profile photos
   const [kidPhotos, setKidPhotos] = useState<Record<string, string>>({})
-  const [showPhotoModal, setShowPhotoModal] = useState(false)
-  const [photoModalKid, setPhotoModalKid] = useState('')
-  const [aiGenerating, setAiGenerating] = useState(false)
-  const [aiVariants, setAiVariants] = useState<string[]>([])
-  const [aiPrompt, setAiPrompt] = useState('')
-  const [aiStyle, setAiStyle] = useState('cute cartoon')
-  const [photoUploading, setPhotoUploading] = useState(false)
-  const photoFileRef = useRef<HTMLInputElement>(null)
+  const [showPhotoGallery, setShowPhotoGallery] = useState(false)
+  const [photoGalleryKid, setPhotoGalleryKid] = useState('')
   const [showVideoModal, setShowVideoModal] = useState(false)
 
   // Event modal
@@ -1166,11 +1161,6 @@ export default function KidsSchedulePage() {
 
   // Reactions — keyed by event_id
   const [reactions, setReactions] = useState<Record<string, { person: string; emoji: string }[]>>({})
-
-  // Rest-of-week view
-  const [restWeekMode, setRestWeekMode] = useState(false)
-  const [restWeekEvents, setRestWeekEvents] = useState<Event[]>([])
-  const [loadingRestWeek, setLoadingRestWeek] = useState(false)
 
   // WhatsApp send panel
   const [showWAPanel, setShowWAPanel] = useState(false)
@@ -1246,30 +1236,6 @@ export default function KidsSchedulePage() {
     } finally { setLoadingLinks(false) }
   }, [])
 
-  // Compute remaining days from today to Thursday (inclusive), excluding past days
-  function getRestOfWeekDates(): Date[] {
-    const today = new Date(); today.setHours(0,0,0,0)
-    const THURSDAY = 4 // 0=Sun … 6=Sat
-    const days: Date[] = []
-    for (let d = new Date(today); d.getDay() !== 5 /* Fri */; d = addDays(d, 1)) {
-      if (d >= today && d.getDay() <= THURSDAY) days.push(new Date(d))
-      if (d.getDay() === THURSDAY) break // stop at Thursday
-    }
-    return days
-  }
-
-  async function loadRestWeekEvents() {
-    const dates = getRestOfWeekDates()
-    if (!dates.length) return
-    setLoadingRestWeek(true)
-    try {
-      const start = format(dates[0], 'yyyy-MM-dd')
-      const end   = format(dates[dates.length - 1], 'yyyy-MM-dd')
-      const res = await fetch(`/api/events?include_recurring=true&start=${start}&end=${end}`)
-      if (res.ok) setRestWeekEvents(await res.json())
-    } finally { setLoadingRestWeek(false) }
-  }
-
   useEffect(() => { loadEvents() }, [loadEvents])
   useEffect(() => { loadReminders() }, [loadReminders])
   useEffect(() => { loadGroceries() }, [loadGroceries])
@@ -1277,59 +1243,15 @@ export default function KidsSchedulePage() {
 
   useEffect(() => {
     fetch('/api/kid-profiles')
-      .then(r => r.ok ? r.json() : [])
-      .then((data: Array<{key: string; photo_url: string}>) => {
-        const map: Record<string, string> = {}
-        data.forEach(p => { map[p.key] = p.photo_url })
-        setKidPhotos(map)
+      .then(r => r.ok ? r.json() : {})
+      .then((data: Record<string, string>) => {
+        setKidPhotos(data)
       })
       .catch(() => {})
   }, [])
 
-  async function saveKidPhoto(key: string, photoUrl: string) {
-    setKidPhotos(prev => ({ ...prev, [key]: photoUrl }))
-    await fetch('/api/kid-profiles', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, photo_url: photoUrl }),
-    })
-    setShowPhotoModal(false)
-    setAiVariants([])
-  }
-
-  async function generateAiImages() {
-    setAiGenerating(true)
-    setAiVariants([])
-    try {
-      const kidName = KIDS.find(k => k.key === photoModalKid)?.name || photoModalKid
-      const res = await fetch('/api/generate-kid-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kidName, style: aiStyle }),
-      })
-      const data = await res.json()
-      setAiVariants(data.variants || [])
-      setAiPrompt(data.prompt || '')
-    } catch {
-      // ignore
-    } finally {
-      setAiGenerating(false)
-    }
-  }
-
-  async function handlePhotoUpload(file: File) {
-    setPhotoUploading(true)
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      const res = await fetch('/api/upload', { method: 'POST', body: fd })
-      if (res.ok) {
-        const { url } = await res.json()
-        await saveKidPhoto(photoModalKid, url)
-      }
-    } finally {
-      setPhotoUploading(false)
-    }
+  function handleProfileChanged(kidKey: string, url: string) {
+    setKidPhotos(prev => ({ ...prev, [kidKey]: url }))
   }
 
   // Events CRUD
@@ -1719,7 +1641,7 @@ export default function KidsSchedulePage() {
           style={{ background: 'linear-gradient(135deg,#0a0f1e 0%,#0f2744 40%,#1a3a6e 70%,#0f2744 100%)' }}>
 
           {/* Top strip: family name + actions */}
-          <div className="px-4 pt-4 pb-2 flex items-center justify-between gap-2 flex-row-reverse">
+          <div className="px-3 pt-2 pb-2 sm:px-4 sm:pt-4 flex items-center justify-between gap-2 flex-row-reverse">
 
             {/* Right: family name + live dot */}
             <div className="flex items-center gap-2 flex-row-reverse shrink-0">
@@ -1728,36 +1650,38 @@ export default function KidsSchedulePage() {
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             </div>
 
-            {/* Left: action buttons — bigger touch targets */}
-            <div className="flex items-center gap-2">
-              {/* Primary: Add via inbox */}
+            {/* Left: action buttons — mobile optimized */}
+            <div className="flex items-center gap-1.5">
+              {/* Primary: Add via inbox — always visible */}
               <a href="/inbox"
-                className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-white font-black px-5 py-3 rounded-2xl transition whitespace-nowrap shadow-lg shadow-emerald-500/40 text-base">
-                ✚ הכנס נתונים
+                className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-white font-black rounded-2xl transition shadow-lg shadow-emerald-500/40 px-3 py-2.5 text-sm sm:px-5 sm:py-3 sm:text-base whitespace-nowrap">
+                <span>✚</span>
+                <span className="hidden xs:inline sm:inline">הכנס נתונים</span>
               </a>
               {/* Add event directly */}
               <button
                 onClick={() => openAddEvent(['assaf','danil','ami','alex','itan'].includes(activeTab) ? activeTab : '')}
-                className="flex items-center gap-1.5 bg-blue-500/80 hover:bg-blue-400/80 active:bg-blue-600/80 text-white font-black px-4 py-3 rounded-2xl transition whitespace-nowrap text-base"
+                className="flex items-center gap-1 bg-blue-500/80 hover:bg-blue-400/80 active:bg-blue-600/80 text-white font-black rounded-2xl transition px-3 py-2.5 text-sm sm:px-4 sm:py-3 sm:text-base whitespace-nowrap"
                 title="הוסף אירוע">
-                ➕ אירוע
+                <span>➕</span>
+                <span className="hidden sm:inline">אירוע</span>
               </button>
               {/* AI video */}
               <button
                 onClick={() => setShowVideoModal(true)}
-                className="bg-purple-500/80 hover:bg-purple-400/80 active:bg-purple-600/80 text-white text-sm font-bold px-3 py-2.5 rounded-xl transition"
+                className="bg-purple-500/80 hover:bg-purple-400/80 active:bg-purple-600/80 text-white text-sm font-bold w-10 h-10 rounded-xl transition flex items-center justify-center"
                 title="סיכום וידאו AI">
                 🎬
               </button>
-              {/* Print */}
+              {/* Print — desktop only */}
               <button onClick={() => window.print()}
-                className="bg-white/10 hover:bg-white/20 active:bg-white/30 text-white/70 hover:text-white text-sm px-3 py-2.5 rounded-xl transition hidden sm:flex"
+                className="bg-white/10 hover:bg-white/20 active:bg-white/30 text-white/70 hover:text-white text-sm w-10 h-10 rounded-xl transition hidden sm:flex items-center justify-center"
                 title="הדפס">
                 🖨️
               </button>
               {/* Logout */}
               <button onClick={async () => { await fetch('/api/auth', { method: 'DELETE' }); window.location.href = '/login' }}
-                className="bg-white/10 hover:bg-white/20 text-white/50 hover:text-white/80 text-xs px-2.5 py-2.5 rounded-xl transition">
+                className="bg-white/10 hover:bg-white/20 text-white/50 hover:text-white/80 text-xs px-2 py-2.5 rounded-xl transition hidden sm:block">
                 יציאה
               </button>
             </div>
@@ -1788,20 +1712,16 @@ export default function KidsSchedulePage() {
             <div className="flex items-center gap-1.5 justify-center">
               <button onClick={() => setSelectedDate(d => subDays(d, 1))}
                 className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/30 flex items-center justify-center text-white font-bold text-lg transition">‹</button>
-              <button onClick={() => { setSelectedDate(new Date()); setRestWeekMode(false) }}
+              <button onClick={() => setSelectedDate(new Date())}
                 className="flex-1 h-10 font-bold bg-amber-500/80 hover:bg-amber-400/80 active:bg-amber-600/80 text-white text-sm rounded-xl transition whitespace-nowrap max-w-[72px]">
                 היום
               </button>
-              <button onClick={() => { setSelectedDate(addDays(new Date(), 1)); setRestWeekMode(false) }}
+              <button onClick={() => setSelectedDate(addDays(new Date(), 1))}
                 className="flex-1 h-10 font-bold bg-sky-500/70 hover:bg-sky-400/70 active:bg-sky-600/70 text-white text-sm rounded-xl transition whitespace-nowrap max-w-[72px]">
                 מחר
               </button>
-              <button onClick={() => { setRestWeekMode(true); loadRestWeekEvents() }}
-                className={`flex-1 h-10 font-bold text-white text-xs rounded-xl transition whitespace-nowrap max-w-[80px] ${restWeekMode ? 'bg-violet-600/90 ring-2 ring-white/40' : 'bg-violet-500/70 hover:bg-violet-400/70 active:bg-violet-600/70'}`}>
-                שאר השבוע
-              </button>
-              <input type="date" value={dateStr} onChange={e => { setSelectedDate(new Date(e.target.value + 'T12:00:00')); setRestWeekMode(false) }}
-                className="bg-white/10 border border-white/20 text-white text-xs rounded-xl px-2 h-10 focus:outline-none focus:ring-2 focus:ring-white/40 w-[110px]" />
+              <input type="date" value={dateStr} onChange={e => setSelectedDate(new Date(e.target.value + 'T12:00:00'))}
+                className="bg-white/10 border border-white/20 text-white text-xs rounded-xl px-2 h-10 focus:outline-none focus:ring-2 focus:ring-white/40 w-[100px] sm:w-[110px]" />
               <button onClick={() => setSelectedDate(d => addDays(d, 1))}
                 className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/30 flex items-center justify-center text-white font-bold text-lg transition">›</button>
             </div>
@@ -1825,91 +1745,8 @@ export default function KidsSchedulePage() {
           </div>
         </div>
 
-        {/* ── REST-OF-WEEK VIEW ──────────────────────────────────────── */}
-        {restWeekMode && (activeTab === 'family' || activeTab === 'kids') && (() => {
-          const rwDates = getRestOfWeekDates()
-          const HE_DAY_NAMES: Record<number,string> = { 0:'ראשון', 1:'שני', 2:'שלישי', 3:'רביעי', 4:'חמישי' }
-          const todayStr = format(new Date(), 'yyyy-MM-dd')
-          return (
-            <div className="max-w-5xl mx-auto">
-              <div className="flex items-center justify-between mb-4 flex-row-reverse">
-                <h2 className="font-black text-white text-xl">📅 שארית השבוע</h2>
-                <button onClick={() => setRestWeekMode(false)}
-                  className="text-white/70 hover:text-white text-sm font-bold bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-xl transition">
-                  ← חזור
-                </button>
-              </div>
-              {loadingRestWeek ? (
-                <div className="text-center py-12 text-white/60 text-lg">⏳ טוען...</div>
-              ) : rwDates.length === 0 ? (
-                <div className="text-center py-16 bg-white/10 rounded-3xl">
-                  <div className="text-5xl mb-3">🏖️</div>
-                  <div className="text-white font-black text-xl">אין ימים שנותרו השבוע עד יום חמישי</div>
-                  <div className="text-white/60 mt-1">שבת שלום!</div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {rwDates.map(d => {
-                    const dStr = format(d, 'yyyy-MM-dd')
-                    const isToday = dStr === todayStr
-                    const dayName = HE_DAY_NAMES[d.getDay()] || ''
-                    const dayEvs = restWeekEvents.filter(e => {
-                      if (e.is_recurring && e.recurrence_days) return e.recurrence_days.includes(DAY_NAMES[d.getDay()])
-                      return e.date === dStr
-                    })
-                    const byPerson = FAMILY_PEOPLE.reduce((acc, p) => {
-                      acc[p.key] = dayEvs.filter(e => e.person === p.key)
-                      return acc
-                    }, {} as Record<string, Event[]>)
-                    return (
-                      <div key={dStr}
-                        className={`rounded-3xl overflow-hidden shadow-lg border-2 transition-all ${isToday ? 'border-amber-400 shadow-amber-500/30' : 'border-white/10'}`}
-                        style={{ background: isToday ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.10)' }}>
-                        {/* Day header */}
-                        <div className={`px-4 py-3 flex items-center justify-between flex-row-reverse ${isToday ? 'bg-amber-500/30' : 'bg-white/5'}`}>
-                          <div className="text-right">
-                            <div className="font-black text-white text-base">{isToday ? '⭐ היום' : `יום ${dayName}`}</div>
-                            <div className="text-white/60 text-xs">{format(d, 'd בMMMM', { locale: he })}</div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="bg-white/20 text-white text-xs font-black px-2 py-0.5 rounded-full">{dayEvs.length} אירועים</span>
-                            <button onClick={() => { setRestWeekMode(false); setSelectedDate(d) }}
-                              className="text-white/60 hover:text-white text-xs bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-full transition">
-                              פתח
-                            </button>
-                          </div>
-                        </div>
-                        {/* Events by person */}
-                        <div className="px-3 py-2 space-y-1.5">
-                          {dayEvs.length === 0 ? (
-                            <div className="text-center py-3 text-white/30 text-sm">🎉 יום פנוי</div>
-                          ) : FAMILY_PEOPLE.filter(p => byPerson[p.key].length > 0).map(p => (
-                            <div key={p.key}>
-                              {byPerson[p.key].map(ev => (
-                                <div key={ev.id} className="flex items-center gap-2 flex-row-reverse py-1 px-2 rounded-xl"
-                                  style={{ background: p.color+'18' }}>
-                                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-black text-white"
-                                    style={{ background: p.color }}>{p.name[0]}</div>
-                                  <div className="flex-1 text-right">
-                                    <span className={`text-sm font-bold text-white ${ev.completed ? 'line-through opacity-50' : ''}`}>{ev.title}</span>
-                                    {ev.start_time && <span className="text-xs text-white/50 mr-1.5">{ev.start_time.slice(0,5)}</span>}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )
-        })()}
-
         {/* ── FAMILY TAB ─────────────────────────────────────────────── */}
-        {!restWeekMode && activeTab === 'family' && (
+        {activeTab === 'family' && (
           <div className="max-w-4xl mx-auto">
             <div className="bg-white rounded-3xl shadow-lg overflow-hidden border border-gray-100">
               {FAMILY_PEOPLE.map((person, idx) => {
@@ -1962,7 +1799,7 @@ export default function KidsSchedulePage() {
 
 
         {/* ── KIDS TAB ───────────────────────────────────────────────── */}
-        {!restWeekMode && activeTab === 'kids' && (
+        {activeTab === 'kids' && (
           loadingEvents ? <div className="text-center py-16 text-gray-400 text-xl">⏳ טוען...</div> : (
             <>
               {/* ── Kids cards ─────────────────────────────────────────── */}
@@ -1980,7 +1817,7 @@ export default function KidsSchedulePage() {
                           theme={theme}
                           onClick={() => cycleTheme(kid.key)}
                           customPhoto={kidPhotos[kid.key]}
-                          onEditPhoto={() => { setPhotoModalKid(kid.key); setShowPhotoModal(true); setAiVariants([]); setAiStyle('cute cartoon') }}
+                          onEditPhoto={() => { setPhotoGalleryKid(kid.key); setShowPhotoGallery(true) }}
                         />
                         <div className="flex-1 text-right">
                           <div className="font-black text-2xl text-white drop-shadow">{kid.name}</div>
@@ -2113,87 +1950,16 @@ export default function KidsSchedulePage() {
 
       </div>
 
-      {/* ── Kid Photo Editor Modal ─────────────────────────────────────── */}
-      {showPhotoModal && (() => {
-        const kid = KIDS.find(k => k.key === photoModalKid)
+      {/* ── Kid Photo Gallery ──────────────────────────────────────────── */}
+      {showPhotoGallery && (() => {
+        const kid = KIDS.find(k => k.key === photoGalleryKid)
         if (!kid) return null
-        const currentPhoto = kidPhotos[photoModalKid] || kid.photo
-        const AI_STYLES = ['cute cartoon', 'anime', 'watercolor', 'pixel art', 'superhero', 'sticker']
         return (
-          <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-4"
-            style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}
-            onClick={() => setShowPhotoModal(false)}>
-            <div className="w-full sm:max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden"
-              onClick={e => e.stopPropagation()}>
-              {/* Header */}
-              <div className="px-5 pt-5 pb-4 flex items-center justify-between flex-row-reverse"
-                style={{ background: 'linear-gradient(135deg,#667eea,#764ba2)' }}>
-                <button onClick={() => setShowPhotoModal(false)} className="text-white/70 hover:text-white text-2xl leading-none">×</button>
-                <div className="text-right">
-                  <div className="font-black text-xl text-white">🖼️ תמונת פרופיל</div>
-                  <div className="text-white/70 text-sm">{kid.name}</div>
-                </div>
-                {currentPhoto && (
-                  <img src={currentPhoto} alt={kid.name} className="w-14 h-14 rounded-2xl object-cover shadow-lg border-2 border-white/30" />
-                )}
-              </div>
-
-              <div className="px-5 py-4 space-y-4" dir="rtl">
-                {/* Upload option */}
-                <div>
-                  <p className="text-xs font-bold text-gray-500 mb-2">📷 העלה תמונה מהמכשיר</p>
-                  <input type="file" accept="image/*" className="hidden" ref={photoFileRef}
-                    onChange={e => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f) }} />
-                  <button
-                    onClick={() => photoFileRef.current?.click()}
-                    disabled={photoUploading}
-                    className="w-full py-3 rounded-2xl border-2 border-dashed border-purple-300 text-purple-600 font-bold text-sm hover:bg-purple-50 transition disabled:opacity-50">
-                    {photoUploading ? '⏳ מעלה...' : '📁 בחר תמונה'}
-                  </button>
-                </div>
-
-                {/* AI Generation */}
-                <div>
-                  <p className="text-xs font-bold text-gray-500 mb-2">🤖 צור תמונה עם AI</p>
-                  {/* Style selector */}
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {AI_STYLES.map(s => (
-                      <button key={s} type="button" onClick={() => setAiStyle(s)}
-                        className={`px-3 py-1 rounded-full text-xs font-bold transition border-2 ${
-                          aiStyle === s ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-500 border-gray-200 hover:border-purple-300'
-                        }`}>{s}</button>
-                    ))}
-                  </div>
-                  <button
-                    onClick={generateAiImages}
-                    disabled={aiGenerating}
-                    className="w-full py-3 rounded-2xl text-white font-bold text-sm transition disabled:opacity-50"
-                    style={{ background: aiGenerating ? '#ccc' : 'linear-gradient(135deg,#667eea,#764ba2)' }}>
-                    {aiGenerating ? '✨ יוצר תמונות...' : '✨ צור 4 תמונות AI'}
-                  </button>
-                  {aiPrompt && (
-                    <p className="text-[10px] text-gray-400 mt-1.5 text-right leading-relaxed">{aiPrompt}</p>
-                  )}
-                </div>
-
-                {/* AI Variants grid */}
-                {aiVariants.length > 0 && (
-                  <div>
-                    <p className="text-xs font-bold text-gray-500 mb-2">👆 בחר תמונה</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {aiVariants.map((url, i) => (
-                        <button key={i} type="button" onClick={() => saveKidPhoto(photoModalKid, url)}
-                          className="aspect-square rounded-2xl overflow-hidden border-2 border-transparent hover:border-purple-400 transition-all hover:scale-105 shadow-sm">
-                          <img src={url} alt={`variant ${i+1}`} className="w-full h-full object-cover"
-                            onError={e => { (e.target as HTMLImageElement).parentElement!.style.display='none' }} />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <KidPhotoGallery
+            kid={kid}
+            onClose={() => setShowPhotoGallery(false)}
+            onProfileChanged={handleProfileChanged}
+          />
         )
       })()}
     </>
