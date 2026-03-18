@@ -1222,7 +1222,7 @@ export default function KidsSchedulePage() {
   const [loadingLinks, setLoadingLinks] = useState(true)
 
   const [loadingEvents, setLoadingEvents] = useState(true)
-  const [kidThemeIdx, setKidThemeIdx] = useState<Record<string,number>>({ami:0,alex:0,itan:0})
+  const [kidThemeIdx, setKidThemeIdx] = useState<Record<string,number>>({ami:0,alex:0,itan:0,assaf:0,danil:0})
 
   // Kid profile photos
   const [kidPhotos, setKidPhotos] = useState<Record<string, string>>({})
@@ -1263,8 +1263,16 @@ export default function KidsSchedulePage() {
   const dateStr = format(selectedDate, 'yyyy-MM-dd')
   const dayOfWeek = DAY_NAMES[selectedDate.getDay()]
 
-  const cycleTheme = (key: string) =>
-    setKidThemeIdx(prev => ({ ...prev, [key]: ((prev[key] ?? 0) + 1) % (KID_THEMES[key]?.length ?? 3) }))
+  const getTheme = (key: string): KidTheme =>
+    KID_THEMES[key]?.[kidThemeIdx[key] ?? 0]
+    ?? KID_THEMES[key]?.[0]
+    ?? KID_THEME_PACKS[key]?.[0]
+    ?? THEMES.blue
+
+  const cycleTheme = (key: string) => {
+    const len = KID_THEMES[key]?.length ?? KID_THEME_PACKS[key]?.length ?? 3
+    setKidThemeIdx(prev => ({ ...prev, [key]: ((prev[key] ?? 0) + 1) % len }))
+  }
 
   const loadEvents = useCallback(async () => {
     setLoadingEvents(true)
@@ -1888,7 +1896,7 @@ export default function KidsSchedulePage() {
               {/* ── Kids cards ─────────────────────────────────────────── */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {KIDS.map(kid => {
-                  const theme = KID_THEME_PACKS[kid.key][kidThemeIdx[kid.key] ?? 0]
+                  const theme = getTheme(kid.key)
                   const evs = getPersonEvents(kid.key)
                   const nextEv = evs.filter(e => !isEventPast(e) && e.start_time).sort((a,b) => (a.start_time??'').localeCompare(b.start_time??''))[0]
                   return (
@@ -1941,7 +1949,7 @@ export default function KidsSchedulePage() {
                     <div className="text-xs font-bold text-white/50 mb-2 text-right">גם היום:</div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {adultsWithEvents.map(adult => {
-                        const theme = adultThemes[adult.key as 'assaf'|'danil']
+                        const theme = getTheme(adult.key)
                         return (
                           <div key={adult.key} className="rounded-2xl overflow-hidden shadow-md flex flex-col"
                             style={{ background: theme.bg, border: `2px solid ${theme.border}44` }}>
@@ -1999,7 +2007,7 @@ export default function KidsSchedulePage() {
                   { key: 'assaf', name: 'אסף',    color: '#1D4ED8', emoji: '💼', themeKey: 'assaf' },
                   { key: 'danil', name: 'דניאל',  color: '#15803D', emoji: '🌿', themeKey: 'danil' },
                 ].map(parent => {
-                  const theme = KID_THEMES[parent.themeKey]?.[kidThemeIdx[parent.themeKey] ?? 0] ?? KID_THEMES[parent.themeKey]?.[0]
+                  const theme = getTheme(parent.themeKey ?? parent.key)
                   const evs = getPersonEvents(parent.key)
                   const photo = kidPhotos[parent.key]
                   return (
