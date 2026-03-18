@@ -26,6 +26,10 @@ interface KidTheme {
   textColor: string; noteBg: string; noteText: string
   badgeBg: string; badgeText: string; cardBg: string
   dark?: boolean; label: string
+  gradient?: string   // CSS gradient for card header background
+  name?: string       // Hebrew theme name
+  emoji?: string      // Theme emoji for picker
+  text?: string
 }
 
 interface EventForm {
@@ -72,8 +76,94 @@ function getNextOccurrences(startDate: string, recurrenceDays: string[], count: 
   return result
 }
 
-// ── Per-kid theme packs ────────────────────────────────────────────────────
-const THEMES: Record<string, KidTheme[]> = {
+// ── Flat named theme palette ───────────────────────────────────────────────
+const THEMES: Record<string, KidTheme> = {
+  pink: {
+    bg: '#FFF0F3', headerGrad: 'linear-gradient(135deg,#FFB6C1,#FF85A1)',
+    border: '#FF85A1', accent: '#E91E63', textColor: '#880E4F',
+    noteBg: '#FCE4EC', noteText: '#880E4F',
+    badgeBg: '#F8BBD9', badgeText: '#880E4F', cardBg: '#FFF0F3', label: '🌸 ורוד',
+    gradient: 'linear-gradient(135deg,#FCE4EC,#F48FB1)', name: 'ורוד', emoji: '🌸',
+  },
+  teal: {
+    bg: '#E0F7FA', headerGrad: 'linear-gradient(135deg,#26C6DA,#006064)',
+    border: '#00ACC1', accent: '#006064', textColor: '#004D40',
+    noteBg: '#E0F2F1', noteText: '#004D40',
+    badgeBg: '#B2EBF2', badgeText: '#00363A', cardBg: '#E0F7FA', label: "😎 טורקיז",
+    gradient: 'linear-gradient(135deg,#E0F7FA,#80DEEA)', name: 'טורקיז', emoji: '🌊',
+  },
+  dark: {
+    bg: '#1a1a2e', headerGrad: 'linear-gradient(135deg,#6C3483,#1a1a2e)',
+    border: '#A855F7', accent: '#D8B4FE', textColor: '#E9D5FF',
+    noteBg: '#2d1b4e', noteText: '#DDD6FE',
+    badgeBg: '#4C1D95', badgeText: '#DDD6FE', cardBg: '#16213e', dark: true, label: '🌙 כהה',
+    gradient: 'linear-gradient(135deg,#263238,#37474F)', name: 'כהה', emoji: '🌙',
+  },
+  purple: {
+    bg: '#F3E5F5', headerGrad: 'linear-gradient(135deg,#CE93D8,#9575CD)',
+    border: '#AB47BC', accent: '#7B1FA2', textColor: '#4A148C',
+    noteBg: '#EDE7F6', noteText: '#4A148C',
+    badgeBg: '#E1BEE7', badgeText: '#4A148C', cardBg: '#F3E5F5', label: '🍇 סגול',
+    gradient: 'linear-gradient(135deg,#F3E5F5,#CE93D8)', name: 'סגול', emoji: '🍇',
+  },
+  orange: {
+    bg: '#FFF3E0', headerGrad: 'linear-gradient(135deg,#FF7043,#BF360C)',
+    border: '#FF5722', accent: '#BF360C', textColor: '#BF360C',
+    noteBg: '#FBE9E7', noteText: '#BF360C',
+    badgeBg: '#FFCCBC', badgeText: '#BF360C', cardBg: '#FFF8F5', label: '🍊 כתום',
+    gradient: 'linear-gradient(135deg,#FFF3E0,#FFCC80)', name: 'כתום', emoji: '🍊',
+  },
+  green: {
+    bg: '#E8F5E9', headerGrad: 'linear-gradient(135deg,#66BB6A,#1B5E20)',
+    border: '#43A047', accent: '#1B5E20', textColor: '#1B5E20',
+    noteBg: '#F1F8E9', noteText: '#33691E',
+    badgeBg: '#C8E6C9', badgeText: '#1B5E20', cardBg: '#F9FBE7', label: '🌿 ירוק',
+    gradient: 'linear-gradient(135deg,#E8F5E9,#A5D6A7)', name: 'ירוק', emoji: '🌿',
+  },
+  blue: {
+    bg: '#EFF6FF', headerGrad: 'linear-gradient(135deg,#3B82F6,#1E3A8A)',
+    border: '#3B82F6', accent: '#1D4ED8', textColor: '#1E3A8A',
+    noteBg: '#DBEAFE', noteText: '#1E3A8A',
+    badgeBg: '#BFDBFE', badgeText: '#1E3A8A', cardBg: '#EFF6FF', label: '💙 כחול',
+    gradient: 'linear-gradient(135deg,#E3F2FD,#90CAF9)', name: 'כחול', emoji: '💙',
+  },
+  sunset: {
+    bg: '#FFF8F0', headerGrad: 'linear-gradient(135deg,#FFB347,#FF6B35)',
+    border: '#FF8C42', accent: '#FF5733', textColor: '#8B2500',
+    noteBg: '#FFE8D6', noteText: '#8B2500',
+    badgeBg: '#FFD4B8', badgeText: '#8B2500', cardBg: '#FFFAF5', label: '🌅 שקיעה',
+    gradient: 'linear-gradient(135deg,#FFB347,#FF6B35)', name: 'שקיעה', emoji: '🌅',
+  },
+  gold: {
+    bg: '#FFFDE7', headerGrad: 'linear-gradient(135deg,#FFF176,#FFD54F)',
+    border: '#FFD700', accent: '#F9A825', textColor: '#5D4037',
+    noteBg: '#FFF9C4', noteText: '#5D4037',
+    badgeBg: '#FFE082', badgeText: '#5D4037', cardBg: '#FEFDF5', label: '⭐ זהב',
+    gradient: 'linear-gradient(135deg,#FFF176,#FFD54F)', name: 'זהב', emoji: '⭐',
+  },
+  mint: {
+    bg: '#F0FFF4', headerGrad: 'linear-gradient(135deg,#C6F6D5,#68D391)',
+    border: '#38A169', accent: '#276749', textColor: '#1C4532',
+    noteBg: '#C6F6D5', noteText: '#1C4532',
+    badgeBg: '#9AE6B4', badgeText: '#1C4532', cardBg: '#F0FFF4', label: '🍃 מנטה',
+    gradient: 'linear-gradient(135deg,#C6F6D5,#68D391)', name: 'מנטה', emoji: '🍃',
+  },
+  galaxy: {
+    bg: '#0D0221', headerGrad: 'linear-gradient(135deg,#1E0645,#4C1D95)',
+    border: '#7C3AED', accent: '#A78BFA', textColor: '#DDD6FE',
+    noteBg: '#1E0645', noteText: '#DDD6FE',
+    badgeBg: '#3B0764', badgeText: '#DDD6FE', cardBg: '#130338', dark: true, label: '🌌 גלקסיה',
+    gradient: 'linear-gradient(135deg,#1E0645,#4C1D95)', name: 'גלקסיה', emoji: '🌌',
+  },
+}
+
+const ADULT_THEMES: Record<string, KidTheme> = {
+  assaf: THEMES.blue,
+  danil: THEMES.green,
+}
+
+// ── Per-kid theme packs (legacy per-kid arrays — kept for kids tab) ────────
+const KID_THEME_PACKS: Record<string, KidTheme[]> = {
   ami: [
     { bg: '#FFF0F3', headerGrad: 'linear-gradient(135deg,#FFB6C1,#FF85A1)',
       border: '#FF85A1', accent: '#E91E63', textColor: '#880E4F',
@@ -118,19 +208,13 @@ const THEMES: Record<string, KidTheme[]> = {
   ],
 }
 
-const ADULT_THEMES: Record<string, KidTheme> = {
-  assaf: {
-    bg: '#EFF6FF', headerGrad: 'linear-gradient(135deg,#3B82F6,#1E3A8A)',
-    border: '#3B82F6', accent: '#1D4ED8', textColor: '#1E3A8A',
-    noteBg: '#DBEAFE', noteText: '#1E3A8A',
-    badgeBg: '#BFDBFE', badgeText: '#1E3A8A', cardBg: '#EFF6FF', label: '💼 אסף',
-  },
-  danil: {
-    bg: '#F0FDF4', headerGrad: 'linear-gradient(135deg,#4ADE80,#14532D)',
-    border: '#22C55E', accent: '#15803D', textColor: '#14532D',
-    noteBg: '#DCFCE7', noteText: '#14532D',
-    badgeBg: '#BBF7D0', badgeText: '#14532D', cardBg: '#F0FDF4', label: '🌿 דניאל',
-  },
+// ── KID_THEMES: all kids + parents, using flat named themes ───────────────
+const KID_THEMES: Record<string, KidTheme[]> = {
+  ami:   [THEMES.pink, THEMES.sunset, THEMES.mint, THEMES.gold, THEMES.purple, THEMES.teal, THEMES.dark, THEMES.galaxy],
+  alex:  [THEMES.purple, THEMES.blue, THEMES.galaxy, THEMES.gold, THEMES.orange, THEMES.dark, THEMES.mint, THEMES.pink],
+  itan:  [THEMES.green, THEMES.mint, THEMES.teal, THEMES.blue, THEMES.dark, THEMES.gold, THEMES.galaxy, THEMES.orange],
+  assaf: [THEMES.blue, THEMES.dark, THEMES.galaxy, THEMES.gold, THEMES.teal, THEMES.mint, THEMES.purple, THEMES.green],
+  danil: [THEMES.green, THEMES.mint, THEMES.teal, THEMES.dark, THEMES.gold, THEMES.blue, THEMES.galaxy, THEMES.orange],
 }
 
 const KIDS = [
@@ -172,13 +256,12 @@ const FAMILY_PEOPLE = [
   { key: 'danil', name: 'דניאל',  color: '#15803D', photo: null, emoji: '🌿' },
 ]
 
-type TabKey = 'now' | 'kids' | 'assaf' | 'danil' | 'links'
+type TabKey = 'now' | 'kids' | 'parents' | 'links'
 const TABS = [
-  { key: 'now'    as TabKey, label: '⏰ עכשיו' },
-  { key: 'kids'   as TabKey, label: '👧👦 ילדים' },
-  { key: 'assaf'  as TabKey, label: '💼 אסף' },
-  { key: 'danil'  as TabKey, label: '🌿 דניאל' },
-  { key: 'links'  as TabKey, label: '🔗 קישורים' },
+  { key: 'now'     as TabKey, label: '⏰ עכשיו' },
+  { key: 'kids'    as TabKey, label: '👧👦 ילדים' },
+  { key: 'parents' as TabKey, label: '👨‍👩 הורים' },
+  { key: 'links'   as TabKey, label: '🔗 קישורים' },
 ]
 
 
@@ -1181,7 +1264,7 @@ export default function KidsSchedulePage() {
   const dayOfWeek = DAY_NAMES[selectedDate.getDay()]
 
   const cycleTheme = (key: string) =>
-    setKidThemeIdx(prev => ({ ...prev, [key]: (prev[key] + 1) % 3 }))
+    setKidThemeIdx(prev => ({ ...prev, [key]: ((prev[key] ?? 0) + 1) % (KID_THEMES[key]?.length ?? 3) }))
 
   const loadEvents = useCallback(async () => {
     setLoadingEvents(true)
@@ -1419,7 +1502,7 @@ export default function KidsSchedulePage() {
 
   // Reactions
   async function toggleReaction(eventId: string, emoji: string) {
-    const person = activeTab === 'assaf' || activeTab === 'danil' ? activeTab : 'assaf'
+    const person = 'assaf'
     // Optimistic update
     setReactions(prev => {
       const current = prev[eventId] || []
@@ -1710,7 +1793,7 @@ export default function KidsSchedulePage() {
               </a>
               {/* Add event directly */}
               <button
-                onClick={() => openAddEvent(['assaf','danil','ami','alex','itan'].includes(activeTab) ? activeTab : '')}
+                onClick={() => openAddEvent(['ami','alex','itan'].includes(activeTab) ? activeTab : '')}
                 className="flex items-center gap-1 bg-blue-500/80 hover:bg-blue-400/80 active:bg-blue-600/80 text-white font-black rounded-2xl transition px-3 py-2.5 text-sm sm:px-4 sm:py-3 sm:text-base whitespace-nowrap"
                 title="הוסף אירוע">
                 <span>➕</span>
@@ -1805,20 +1888,27 @@ export default function KidsSchedulePage() {
               {/* ── Kids cards ─────────────────────────────────────────── */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {KIDS.map(kid => {
-                  const theme = THEMES[kid.key][kidThemeIdx[kid.key]]
+                  const theme = KID_THEME_PACKS[kid.key][kidThemeIdx[kid.key] ?? 0]
                   const evs = getPersonEvents(kid.key)
                   const nextEv = evs.filter(e => !isEventPast(e) && e.start_time).sort((a,b) => (a.start_time??'').localeCompare(b.start_time??''))[0]
                   return (
                     <div key={kid.key} className="rounded-3xl overflow-hidden shadow-lg flex flex-col"
                       style={{ background: theme.bg, border: `2px solid ${theme.border}44` }}>
-                      <div className="px-5 pt-5 pb-4 flex items-center gap-4 flex-row-reverse" style={{ background: theme.headerGrad }}>
-                        <KidAvatar
-                          kid={kid}
-                          theme={theme}
-                          onClick={() => cycleTheme(kid.key)}
-                          customPhoto={kidPhotos[kid.key]}
-                          onEditPhoto={() => { setPhotoGalleryKid(kid.key); setShowPhotoGallery(true) }}
-                        />
+                      <div className="px-5 pt-5 pb-4 flex items-center gap-4 flex-row-reverse" style={{ background: theme.gradient ?? theme.headerGrad }}>
+                        <div className="flex flex-col items-center flex-shrink-0">
+                          <KidAvatar
+                            kid={kid}
+                            theme={theme}
+                            onClick={() => cycleTheme(kid.key)}
+                            customPhoto={kidPhotos[kid.key]}
+                            onEditPhoto={() => { setPhotoGalleryKid(kid.key); setShowPhotoGallery(true) }}
+                          />
+                          <div className="text-center mt-1">
+                            <span className="text-[10px] font-bold opacity-60" style={{ color: theme.textColor }}>
+                              {theme.emoji ?? '🎨'} {theme.name ?? theme.label}
+                            </span>
+                          </div>
+                        </div>
                         <div className="flex-1 text-right">
                           <div className="font-black text-2xl text-white drop-shadow">{kid.name}</div>
                           <div className="text-white/70 text-xs mt-0.5">{evs.length===0?'יום חופשי 🎉':`${evs.length} פעילויות היום`}</div>
@@ -1898,33 +1988,69 @@ export default function KidsSchedulePage() {
           )
         )}
 
-        {/* ── ADULT TABS ─────────────────────────────────────────────── */}
-        {(activeTab==='assaf'||activeTab==='danil') && (() => {
-          const adult = ADULTS.find(a => a.key===activeTab)!
-          const theme = ADULT_THEMES[activeTab]
-          const evs = getPersonEvents(adult.key)
-          return (
-            <div className="max-w-2xl mx-auto">
-              <div className="rounded-3xl overflow-hidden shadow-lg flex flex-col" style={{ background: theme.bg, border: `2px solid ${theme.border}44` }}>
-                <div className="px-6 py-5 flex items-center gap-5 flex-row-reverse" style={{ background: theme.headerGrad }}>
-                  <div className="w-20 h-20 rounded-full flex items-center justify-center text-4xl flex-shrink-0"
-                    style={{ background: 'rgba(255,255,255,0.2)', border: '3px solid rgba(255,255,255,0.5)' }}>{adult.emoji}</div>
-                  <div className="flex-1 text-right">
-                    <div className="font-black text-3xl text-white drop-shadow">{adult.name}</div>
-                    <div className="text-white/70 text-sm mt-1">{evs.length===0?'יום חופשי ✨':`${evs.length} אירועים היום`}</div>
-                    <button onClick={() => openAddEvent(adult.key)} className="mt-2 text-xs font-black px-3 py-1 rounded-xl transition"
-                      style={{ background: 'rgba(255,255,255,0.25)', color: 'white' }}>➕ הוסף אירוע</button>
-                  </div>
-                </div>
-                <div className="flex-1 px-4 pt-4 pb-4">
-                  {loadingEvents ? <div className="text-center py-8 text-gray-400">⏳ טוען...</div>
-                  : evs.length===0 ? <div className="text-center py-10 text-5xl opacity-20">✨</div>
-                  : evs.map(ev => <EventCard key={ev.id} event={ev} theme={theme} onToggle={toggleEvent} onDelete={deleteEvent} onEdit={openEditEvent} reactions={reactions[ev.id]||[]} onReact={emoji => toggleReaction(ev.id, emoji)} isPast={isEventPast(ev)} isNext={isEventNext(ev, events)} />)}
-                </div>
+        {/* ── PARENTS TAB ─────────────────────────────────────────────── */}
+        {activeTab === 'parents' && (
+          loadingEvents
+            ? <div className="text-center py-16 text-gray-400 text-xl">⏳ טוען...</div>
+            : (
+            <div className="max-w-4xl mx-auto" dir="rtl">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {[
+                  { key: 'assaf', name: 'אסף',    color: '#1D4ED8', emoji: '💼', themeKey: 'assaf' },
+                  { key: 'danil', name: 'דניאל',  color: '#15803D', emoji: '🌿', themeKey: 'danil' },
+                ].map(parent => {
+                  const theme = KID_THEMES[parent.themeKey]?.[kidThemeIdx[parent.themeKey] ?? 0] ?? KID_THEMES[parent.themeKey]?.[0]
+                  const evs = getPersonEvents(parent.key)
+                  const photo = kidPhotos[parent.key]
+                  return (
+                    <div key={parent.key} className="rounded-3xl overflow-hidden shadow-lg"
+                      style={{ background: theme?.cardBg ?? '#fff', border: `2px solid ${parent.color}33` }}>
+                      {/* Header */}
+                      <div className="px-5 py-4 flex items-center gap-3"
+                        style={{ background: theme?.gradient ?? `${parent.color}18`, borderBottom: `2px solid ${parent.color}22` }}>
+                        <button onClick={() => cycleTheme(parent.key)}
+                          className="flex-shrink-0 w-14 h-14 rounded-full overflow-hidden border-[3px] hover:scale-105 transition-transform"
+                          style={{ borderColor: parent.color }}>
+                          {photo
+                            ? <img src={photo} alt={parent.name} className="w-full h-full object-cover" />
+                            : <div className="w-full h-full flex items-center justify-center text-2xl" style={{ background: parent.color + '22' }}>{parent.emoji}</div>
+                          }
+                        </button>
+                        <div className="flex-1">
+                          <div className="font-black text-xl" style={{ color: theme?.textColor ?? parent.color }}>{parent.name}</div>
+                          <div className="text-sm mt-0.5" style={{ color: (theme?.textColor ?? parent.color) + '99' }}>
+                            {evs.length > 0 ? `${evs.length} אירועים היום` : 'חופשי היום 🎉'}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => { setPhotoGalleryKid(parent.key); setShowPhotoGallery(true) }}
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-sm hover:scale-110 transition-transform border-2 border-white/50 bg-white/20"
+                          title="שנה תמונה">
+                          📷
+                        </button>
+                        <button
+                          onClick={() => openAddEvent(parent.key)}
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-black hover:scale-110 transition-transform border-2 border-dashed"
+                          style={{ borderColor: parent.color, color: parent.color }}>
+                          +
+                        </button>
+                      </div>
+
+                      {/* Events */}
+                      <div className="p-3 space-y-2">
+                        {evs.length === 0 ? (
+                          <div className="text-center py-8 text-gray-400 text-sm">אין אירועים היום</div>
+                        ) : evs.map(ev => (
+                          <EventCard key={ev.id} event={ev} theme={theme ?? KID_THEMES.assaf[0]} onToggle={toggleEvent} onDelete={deleteEvent} onEdit={openEditEvent} reactions={reactions[ev.id] || []} onReact={emoji => toggleReaction(ev.id, emoji)} isPast={isEventPast(ev)} isNext={isEventNext(ev, events)} />
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )
-        })()}
+        )}
 
         {/* ── LINKS TAB ──────────────────────────────────────────────── */}
         {/* ── NOW TAB ─────────────────────────────────────────────────── */}
@@ -2185,7 +2311,12 @@ export default function KidsSchedulePage() {
 
       {/* ── Kid Photo Gallery ──────────────────────────────────────────── */}
       {showPhotoGallery && (() => {
-        const kid = KIDS.find(k => k.key === photoGalleryKid)
+        const allPeople = [
+          ...KIDS,
+          { key: 'assaf', name: 'אסף',   photo: null as string|null, initials: 'א' },
+          { key: 'danil', name: 'דניאל', photo: null as string|null, initials: 'ד' },
+        ]
+        const kid = allPeople.find(k => k.key === photoGalleryKid)
         if (!kid) return null
         return (
           <KidPhotoGallery
