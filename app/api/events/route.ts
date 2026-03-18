@@ -78,8 +78,24 @@ export async function POST(request: NextRequest) {
   let result = await supabase.from('events').insert(fullRow).select().single()
 
   if (result.error && result.error.message.includes('column')) {
-    // Optional columns missing — retry with just the base columns
-    result = await supabase.from('events').insert(baseRow).select().single()
+    // Optional columns missing — try to auto-apply migration then retry
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/run_migrations`, {
+        method: 'POST',
+        headers: {
+          'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY!,
+          'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      })
+      // Retry with full row after migration
+      result = await supabase.from('events').insert(fullRow).select().single()
+      // If still failing, fall back to base
+      if (result.error) result = await supabase.from('events').insert(baseRow).select().single()
+    } catch {
+      result = await supabase.from('events').insert(baseRow).select().single()
+    }
   }
 
   if (result.error) return NextResponse.json({ error: result.error.message }, { status: 500 })
