@@ -7,6 +7,29 @@ import WeatherWidget from '@/components/WeatherWidget'
 import VideoSummaryModal from '@/components/VideoSummaryModal'
 import KidPhotoGallery from '@/components/KidPhotoGallery'
 
+// ── URL helpers ──────────────────────────────────────────────────────────────
+const URL_REGEX = /https?:\/\/[^\s,;'"<>)\]]+/gi
+
+function extractUrls(text: string | null | undefined): string[] {
+  if (!text) return []
+  return Array.from(new Set(text.match(URL_REGEX) ?? []))
+}
+
+function NotesWithLinks({ text, noteStyle }: { text: string; noteStyle?: React.CSSProperties }) {
+  const parts = text.split(/(https?:\/\/[^\s,;'"<>)\]]+)/gi)
+  return (
+    <span style={noteStyle}>
+      {parts.map((part, i) =>
+        /^https?:\/\//i.test(part)
+          ? <a key={i} href={part} target="_blank" rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="text-blue-600 underline hover:text-blue-800 break-all font-bold">{part.length > 40 ? part.slice(0, 40) + '…' : part}</a>
+          : <span key={i}>{part}</span>
+      )}
+    </span>
+  )
+}
+
 interface Event {
   id: string; title: string; person: string; date: string
   start_time: string | null; end_time: string | null
@@ -450,7 +473,8 @@ function EventCard({ event, theme, onToggle, onDelete, onEdit, reactions, onReac
           {event.notes && (
             <div className="text-sm rounded-xl px-2.5 py-1.5 mt-1 text-right leading-relaxed"
               style={{ background: theme.noteBg, color: done ? '#bbb' : theme.noteText }}>
-              <span className="font-bold">📝 </span>{event.notes}
+              <span className="font-bold">📝 </span>
+              <NotesWithLinks text={event.notes} />
             </div>
           )}
           {event.meeting_link && !done && (
@@ -459,6 +483,28 @@ function EventCard({ event, theme, onToggle, onDelete, onEdit, reactions, onReac
               className="inline-flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-lg mt-1.5 transition-opacity hover:opacity-80"
               style={{ background: theme.accent, color: '#fff' }}>🔗 כניסה לפגישה</a>
           )}
+          {/* Auto-detected links from title/notes (not already shown as meeting_link) */}
+          {!done && (() => {
+            const detected = [
+              ...extractUrls(event.title),
+              ...extractUrls(event.notes),
+            ].filter(u => u !== event.meeting_link && u !== event.attachment_url)
+            if (!detected.length) return null
+            return (
+              <div className="flex flex-col gap-1 mt-1.5">
+                {detected.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-xl border transition hover:opacity-80"
+                    style={{ background: theme.badgeBg, color: theme.badgeText, borderColor: theme.border + '44' }}>
+                    <span>🔗</span>
+                    <span className="truncate flex-1">{url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 45)}</span>
+                    <span className="opacity-60 text-[10px] flex-shrink-0">↗</span>
+                  </a>
+                ))}
+              </div>
+            )
+          })()}
           {/* Non-image / failed-image attachment link */}
           {event.attachment_url && imgFailed && (
             <a href={event.attachment_url} target="_blank" rel="noopener noreferrer"
@@ -1443,6 +1489,22 @@ export default function KidsSchedulePage() {
         setEvents(prev => [...prev, ...created])
       }
       setShowModal(false)
+
+      // ── Auto-add any URLs in the event to family links ─────────────────
+      const allText = [eventForm.title, eventForm.notes, eventForm.meeting_link].join(' ')
+      const foundUrls = extractUrls(allText)
+      for (const url of foundUrls) {
+        if (links.some(l => l.url === url)) continue   // already saved
+        const title = eventForm.title.replace(URL_REGEX, '').trim() || url
+        const res = await fetch('/api/reminders', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date: format(new Date(), 'yyyy-MM-dd'), person: '__link__', text: `${title}||${url}`, completed: false }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setLinks(prev => [...prev, { id: data.id, title, url }])
+        }
+      }
     } finally { setSavingEvent(false) }
   }
   async function toggleEvent(event: Event) {
