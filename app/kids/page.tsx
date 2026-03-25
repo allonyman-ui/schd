@@ -3,9 +3,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { format, addDays, subDays } from 'date-fns'
 import { he } from 'date-fns/locale'
+import Link from 'next/link'
 import WeatherWidget from '@/components/WeatherWidget'
 import VideoSummaryModal from '@/components/VideoSummaryModal'
 import KidPhotoGallery from '@/components/KidPhotoGallery'
+import CameraWidget from '@/components/CameraWidget'
 
 // ── URL helpers ──────────────────────────────────────────────────────────────
 const URL_REGEX = /https?:\/\/[^\s,;'"<>)\]]+/gi
@@ -279,12 +281,13 @@ const FAMILY_PEOPLE = [
   { key: 'danil', name: 'דניאל',  color: '#15803D', photo: null, emoji: '🌿' },
 ]
 
-type TabKey = 'now' | 'kids' | 'parents' | 'links'
+type TabKey = 'now' | 'kids' | 'parents' | 'links' | 'athens'
 const TABS = [
   { key: 'now'     as TabKey, label: '⏰ עכשיו' },
   { key: 'kids'    as TabKey, label: '👧👦 ילדים' },
   { key: 'parents' as TabKey, label: '👨‍👩 הורים' },
   { key: 'links'   as TabKey, label: '🔗 קישורים' },
+  { key: 'athens'  as TabKey, label: '✈️ אתונה', href: '/athens' },
 ]
 
 
@@ -299,10 +302,10 @@ function LiveClock() {
   const ss   = format(now, 'ss')
   return (
     <div dir="ltr" className="flex items-end gap-0.5 leading-none tabular-nums select-none">
-      <span className="font-black text-white tracking-tight" style={{ fontSize: '2.6rem', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+      <span className="font-black text-white tracking-tight" style={{ fontSize: '3.2rem', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', textShadow: '0 2px 20px rgba(255,255,255,0.2)' }}>
         {hhmm}
       </span>
-      <span className="font-bold text-white/40 mb-1" style={{ fontSize: '1.1rem', fontVariantNumeric: 'tabular-nums' }}>
+      <span className="font-bold text-white/35 mb-1.5" style={{ fontSize: '1.2rem', fontVariantNumeric: 'tabular-nums' }}>
         :{ss}
       </span>
     </div>
@@ -541,9 +544,15 @@ function EventCard({ event, theme, onToggle, onDelete, onEdit, reactions, onReac
             </div>
           </div>
         </div>
-        <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-          <button onClick={() => onEdit(event)} className="text-gray-300 hover:text-blue-500 text-xs" title="ערוך">✏️</button>
-          <button onClick={() => onDelete(event.id)} className="text-gray-300 hover:text-red-500 text-xs" title="מחק">🗑️</button>
+        <div className="flex flex-col gap-1.5 flex-shrink-0">
+          <button onClick={() => onEdit(event)}
+            className="w-7 h-7 rounded-xl flex items-center justify-center text-xs transition-all active:scale-90 hover:scale-110"
+            style={{ background: theme.badgeBg, color: theme.badgeText }}
+            title="ערוך">✏️</button>
+          <button onClick={() => onDelete(event.id)}
+            className="w-7 h-7 rounded-xl flex items-center justify-center text-xs transition-all active:scale-90 hover:scale-110"
+            style={{ background: theme.badgeBg, color: theme.badgeText }}
+            title="מחק">🗑️</button>
         </div>
       </div>
       </div>{/* end p-3 */}
@@ -820,7 +829,7 @@ function GroceryPanel({ items, newVal, loading, onNewChange, onAdd, onToggle, on
 
   return (
     <div className="mt-6 no-print">
-      <div className="bg-white rounded-2xl shadow-md overflow-hidden border border-emerald-100">
+      <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.07)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
         {/* Header */}
         <div className="px-4 py-3 flex items-center gap-2 flex-row-reverse"
           style={{ background: 'linear-gradient(135deg,#059669,#10B981)' }}>
@@ -856,9 +865,9 @@ function GroceryPanel({ items, newVal, loading, onNewChange, onAdd, onToggle, on
                     className="w-4 h-4 cursor-pointer flex-shrink-0 rounded"
                     style={{ accentColor: '#059669' }}
                   />
-                  <span className="flex-1 text-sm text-right text-gray-800">{item.text}</span>
+                  <span className="flex-1 text-sm text-right text-white/80">{item.text}</span>
                   <button onClick={() => onDelete(item.id)}
-                    className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-lg leading-none flex-shrink-0 transition-opacity">×</button>
+                    className="text-white/25 hover:text-red-400 text-lg leading-none flex-shrink-0 transition-opacity">×</button>
                 </li>
               ))}
             </ul>
@@ -867,7 +876,7 @@ function GroceryPanel({ items, newVal, loading, onNewChange, onAdd, onToggle, on
           {/* Done items — faded strikethrough */}
           {done.length > 0 && (
             <>
-              {pending.length > 0 && <div className="border-t border-dashed border-gray-200 my-2" />}
+              {pending.length > 0 && <div className="border-t border-dashed border-white/10 my-2" />}
               <ul className="space-y-1.5 mb-2">
                 {done.map(item => (
                   <li key={item.id} className="flex items-center gap-2 flex-row-reverse group">
@@ -878,9 +887,9 @@ function GroceryPanel({ items, newVal, loading, onNewChange, onAdd, onToggle, on
                       className="w-4 h-4 cursor-pointer flex-shrink-0 rounded"
                       style={{ accentColor: '#059669' }}
                     />
-                    <span className="flex-1 text-sm text-right line-through text-gray-400">{item.text}</span>
+                    <span className="flex-1 text-sm text-right line-through text-white/30">{item.text}</span>
                     <button onClick={() => onDelete(item.id)}
-                      className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-lg leading-none flex-shrink-0 transition-opacity">×</button>
+                      className="text-white/20 hover:text-red-400 text-lg leading-none flex-shrink-0 transition-opacity">×</button>
                   </li>
                 ))}
               </ul>
@@ -896,7 +905,8 @@ function GroceryPanel({ items, newVal, loading, onNewChange, onAdd, onToggle, on
               onKeyDown={e => e.key === 'Enter' && onAdd()}
               placeholder="הוסף פריט לקניות..."
               dir="rtl"
-              className="flex-1 border-2 border-emerald-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-400 min-w-0 bg-emerald-50/30"
+              className="flex-1 rounded-xl px-3 py-2 text-sm focus:outline-none min-w-0 text-white/90 placeholder-white/30"
+              style={{ background: 'rgba(255,255,255,0.08)', border: '1.5px solid rgba(5,150,105,0.4)' }}
             />
             <button onClick={onAdd} disabled={!newVal.trim()}
               className="text-white text-sm font-black px-4 py-2 rounded-xl disabled:opacity-40 transition shadow-sm"
@@ -1089,7 +1099,7 @@ function LinksPanel({ links, newLinkTitle, newLinkUrl, loading, onTitleChange, o
   const faviconOf = (url: string) => { try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=32` } catch { return null } }
 
   return (
-    <div className="bg-white rounded-3xl shadow-md overflow-hidden border border-blue-100">
+    <div className="rounded-3xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.13)', boxShadow: '0 16px 48px rgba(0,0,0,0.35)' }}>
       {/* Header */}
       <div className="px-5 py-4 flex items-center gap-3 flex-row-reverse"
         style={{ background: 'linear-gradient(135deg,#2563EB,#4F46E5)' }}>
@@ -1106,35 +1116,39 @@ function LinksPanel({ links, newLinkTitle, newLinkUrl, loading, onTitleChange, o
       <div className="p-5">
         {/* Links grid */}
         {!loading && links.length === 0 && (
-          <div className="text-center py-10 text-gray-400">
+          <div className="text-center py-10">
             <div className="text-5xl mb-3">🔗</div>
-            <div className="font-bold text-base mb-1">אין קישורים עדיין</div>
-            <div className="text-sm">הוסף קישורים לאתרים שאתם משתמשים בהם לעתים קרובות</div>
+            <div className="font-bold text-base mb-1 text-white/60">אין קישורים עדיין</div>
+            <div className="text-sm text-white/35">הוסף קישורים לאתרים שאתם משתמשים בהם לעתים קרובות</div>
           </div>
         )}
         {links.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
             {links.map(link => (
-              <div key={link.id} className="group flex items-center gap-3 flex-row-reverse bg-gray-50 hover:bg-blue-50 rounded-2xl px-4 py-3 border border-gray-100 hover:border-blue-200 transition-all">
+              <div key={link.id} className="group flex items-center gap-3 flex-row-reverse rounded-2xl px-4 py-3 transition-all"
+                style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}
+                onMouseEnter={e => (e.currentTarget.style.background='rgba(255,255,255,0.11)')}
+                onMouseLeave={e => (e.currentTarget.style.background='rgba(255,255,255,0.07)')}>
                 <div className="flex-shrink-0">
                   {faviconOf(link.url)
                     ? <img src={faviconOf(link.url)!} alt="" className="w-8 h-8 rounded-lg" onError={e => { (e.target as HTMLImageElement).style.display='none' }} />
-                    : <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-lg">🔗</div>
+                    : <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg" style={{ background: 'rgba(255,255,255,0.1)' }}>🔗</div>
                   }
                 </div>
                 <div className="flex-1 min-w-0 text-right">
                   <a href={link.url} target="_blank" rel="noopener noreferrer"
-                    className="font-black text-gray-800 hover:text-blue-600 text-sm leading-snug block truncate transition-colors">
+                    className="font-black text-white/90 hover:text-blue-300 text-sm leading-snug block truncate transition-colors">
                     {link.title}
                   </a>
-                  <div className="text-xs text-gray-400 truncate">{hostOf(link.url)}</div>
+                  <div className="text-xs text-white/35 truncate">{hostOf(link.url)}</div>
                 </div>
                 <div className="flex gap-1.5 flex-shrink-0">
                   <a href={link.url} target="_blank" rel="noopener noreferrer"
-                    className="w-8 h-8 rounded-xl bg-blue-600 hover:bg-blue-700 flex items-center justify-center text-white text-sm transition shadow-sm"
+                    className="w-8 h-8 rounded-xl bg-blue-600 hover:bg-blue-500 flex items-center justify-center text-white text-sm transition shadow-sm"
                     title="פתח">↗</a>
                   <button onClick={() => onDelete(link.id)}
-                    className="w-8 h-8 rounded-xl bg-gray-100 hover:bg-red-100 hover:text-red-500 flex items-center justify-center text-gray-400 text-sm transition opacity-0 group-hover:opacity-100"
+                    className="w-8 h-8 rounded-xl flex items-center justify-center text-white/30 hover:text-red-400 text-sm transition opacity-0 group-hover:opacity-100"
+                    style={{ background: 'rgba(255,255,255,0.08)' }}
                     title="מחק">×</button>
                 </div>
               </div>
@@ -1143,19 +1157,289 @@ function LinksPanel({ links, newLinkTitle, newLinkUrl, loading, onTitleChange, o
         )}
 
         {/* Add new link form */}
-        <div className="border-t border-gray-100 pt-4 space-y-2">
-          <div className="text-xs font-bold text-gray-400 text-right mb-2">➕ הוסף קישור</div>
+        <div className="pt-4 space-y-2" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <div className="text-xs font-bold text-white/40 text-right mb-2">➕ הוסף קישור</div>
           <input type="text" value={newLinkTitle} onChange={e => onTitleChange(e.target.value)}
             placeholder="שם הקישור (לדוג׳: יומן בי&quot;ס)" dir="rtl"
-            className="w-full border-2 border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 bg-white" />
+            className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none text-white/90 placeholder-white/30"
+            style={{ background: 'rgba(255,255,255,0.08)', border: '1.5px solid rgba(255,255,255,0.12)' }} />
           <input type="url" value={newLinkUrl} onChange={e => onUrlChange(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && onAdd()}
             placeholder="https://..." dir="ltr"
-            className="w-full border-2 border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 bg-white" />
+            className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none text-white/90 placeholder-white/30"
+            style={{ background: 'rgba(255,255,255,0.08)', border: '1.5px solid rgba(255,255,255,0.12)' }} />
           <button onClick={onAdd} disabled={!newLinkTitle.trim() || !newLinkUrl.trim()}
-            className="w-full text-white font-black py-2.5 rounded-xl disabled:opacity-40 transition shadow-sm text-sm"
+            className="w-full text-white font-black py-2.5 rounded-xl disabled:opacity-40 transition shadow-sm text-sm active:scale-95"
             style={{ background: 'linear-gradient(135deg,#2563EB,#4F46E5)' }}>
             ➕ הוסף קישור
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Per-person sticky reminders strip ────────────────────────────────────────
+const STRIP_PEOPLE = [
+  { key: 'ami',   name: 'אמי',    color: '#E91E63' },
+  { key: 'alex',  name: 'אלכס',   color: '#8E24AA' },
+  { key: 'itan',  name: 'איתן',   color: '#43A047' },
+  { key: 'assaf', name: 'אסף',    color: '#1D4ED8' },
+  { key: 'danil', name: 'דניאל',  color: '#15803D' },
+]
+
+function PersonRemindersStrip({ reminders, onToggle, onDelete, onAdd }: {
+  reminders: Reminder[]
+  onToggle: (id: string, done: boolean) => void
+  onDelete: (id: string) => void
+  onAdd: (person: string, text: string) => void
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [newTexts, setNewTexts] = useState<Record<string, string>>({})
+
+  const pendingByPerson = Object.fromEntries(
+    STRIP_PEOPLE.map(p => [p.key, reminders.filter(r => r.person === p.key && !r.completed)])
+  )
+
+  const submitNew = (personKey: string) => {
+    const t = newTexts[personKey]?.trim()
+    if (!t) return
+    onAdd(personKey, t)
+    setNewTexts(p => ({ ...p, [personKey]: '' }))
+  }
+
+  return (
+    <div className="mb-4 rounded-3xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.09)' }}>
+      {/* Person chip row */}
+      <div className="px-3 py-2.5 flex items-center gap-2 flex-row-reverse">
+        <span className="text-[11px] font-black text-white/35 flex-shrink-0">📌 תזכורות אישיות</span>
+        <div className="flex gap-1.5 overflow-x-auto flex-row-reverse flex-1">
+          {STRIP_PEOPLE.map(p => {
+            const count = pendingByPerson[p.key]?.length || 0
+            const isExp = expanded === p.key
+            return (
+              <button key={p.key} onClick={() => setExpanded(isExp ? null : p.key)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full font-bold text-xs transition-all active:scale-95 flex-shrink-0"
+                style={{
+                  background: isExp ? p.color : count > 0 ? p.color + '22' : 'rgba(255,255,255,0.06)',
+                  color: isExp ? '#fff' : count > 0 ? p.color : 'rgba(255,255,255,0.3)',
+                  border: `1.5px solid ${isExp ? p.color : count > 0 ? p.color + '55' : 'rgba(255,255,255,0.08)'}`,
+                  boxShadow: isExp ? `0 0 10px ${p.color}44` : 'none',
+                }}>
+                {p.name}
+                {count > 0 && (
+                  <span className="w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-black"
+                    style={{ background: isExp ? 'rgba(255,255,255,0.3)' : p.color, color: '#fff', minWidth: 16 }}>
+                    {count}
+                  </span>
+                )}
+                {isExp && <span className="ml-0.5 opacity-60">▲</span>}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Expanded reminders for selected person */}
+      {expanded && (() => {
+        const person = STRIP_PEOPLE.find(p => p.key === expanded)!
+        const personRems = reminders.filter(r => r.person === expanded)
+        const pending = personRems.filter(r => !r.completed)
+        const done    = personRems.filter(r => r.completed)
+        return (
+          <div className="px-4 pb-3 pt-1" style={{ borderTop: `1px solid ${person.color}25` }}>
+            {pending.length === 0 && done.length === 0 && (
+              <p className="text-xs text-white/25 text-center py-2">אין תזכורות עדיין ל{person.name}</p>
+            )}
+            <ul className="space-y-1.5 mb-2">
+              {pending.map(r => (
+                <li key={r.id} className="flex items-center gap-2.5 flex-row-reverse">
+                  <button onClick={() => onToggle(r.id, true)}
+                    className="w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition active:scale-95"
+                    style={{ borderColor: person.color + '70' }}>
+                    <span className="text-xs" style={{ color: person.color }}>○</span>
+                  </button>
+                  <span className="flex-1 text-sm text-right text-white/80">{r.text}</span>
+                  <button onClick={() => onDelete(r.id)} className="text-white/20 hover:text-red-400 text-base flex-shrink-0">×</button>
+                </li>
+              ))}
+              {done.slice(0, 3).map(r => (
+                <li key={r.id} className="flex items-center gap-2.5 flex-row-reverse opacity-35">
+                  <button onClick={() => onToggle(r.id, false)}
+                    className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition"
+                    style={{ background: person.color }}>
+                    <span className="text-white text-xs">✓</span>
+                  </button>
+                  <span className="flex-1 text-xs text-right text-white/35 line-through">{r.text}</span>
+                  <button onClick={() => onDelete(r.id)} className="text-white/15 hover:text-red-400 text-sm flex-shrink-0">×</button>
+                </li>
+              ))}
+            </ul>
+            <div className="flex gap-2 flex-row-reverse">
+              <input type="text" value={newTexts[expanded] || ''}
+                onChange={e => setNewTexts(p => ({ ...p, [expanded]: e.target.value }))}
+                onKeyDown={e => { if (e.key === 'Enter') submitNew(expanded) }}
+                placeholder={`הוסף תזכורת ל${person.name}...`} dir="rtl"
+                className="flex-1 rounded-xl px-3 py-1.5 text-xs focus:outline-none text-white/90 placeholder-white/30"
+                style={{ background: 'rgba(255,255,255,0.08)', border: `1.5px solid ${person.color}44` }} />
+              <button onClick={() => submitNew(expanded)} disabled={!newTexts[expanded]?.trim()}
+                className="text-white text-xs font-black px-3 py-1.5 rounded-xl disabled:opacity-40 transition active:scale-95"
+                style={{ background: person.color }}>
+                +
+              </button>
+            </div>
+          </div>
+        )
+      })()}
+    </div>
+  )
+}
+
+// ── Summary / PDF modal ────────────────────────────────────────────────────
+function SummaryModal({ allEvents, reminders, onClose }: {
+  allEvents: Event[]; reminders: Reminder[]; onClose: () => void
+}) {
+  const [selectedPeople, setSelectedPeople] = useState<string[]>(['ami', 'alex', 'itan'])
+  const [period, setPeriod] = useState<'today' | 'tomorrow' | 'week'>('today')
+  const printRef = useRef<HTMLDivElement>(null)
+
+  const now = new Date()
+  const todayStr = format(now, 'yyyy-MM-dd')
+  const tmrwStr  = format(addDays(now, 1), 'yyyy-MM-dd')
+  const weekEnd  = format(addDays(now, 6), 'yyyy-MM-dd')
+
+  function inPeriod(dateStr: string) {
+    if (period === 'today') return dateStr === todayStr
+    if (period === 'tomorrow') return dateStr === tmrwStr
+    return dateStr >= todayStr && dateStr <= weekEnd
+  }
+
+  const filteredEvents = allEvents.filter(ev => selectedPeople.includes(ev.person) && inPeriod(ev.date))
+  const filteredReminders = reminders.filter(r => r.person && selectedPeople.includes(r.person) && !r.completed)
+
+  function togglePerson(key: string) {
+    setSelectedPeople(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
+  }
+
+  function printSummary() {
+    const el = printRef.current
+    if (!el) return
+    const html = `<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8">
+      <style>
+        body { font-family: Arial, sans-serif; direction: rtl; padding: 24px; color: #111; }
+        h1 { font-size: 22px; margin-bottom: 8px; }
+        .sub { color: #666; font-size: 13px; margin-bottom: 20px; }
+        .person { margin-bottom: 18px; }
+        .person-name { font-size: 16px; font-weight: 900; margin-bottom: 6px; }
+        .ev { padding: 6px 10px; margin: 3px 0; background: #f8f8f8; border-radius: 8px; display: flex; gap: 10px; align-items: center; }
+        .ev-time { font-weight: 900; font-size: 13px; color: #1D4ED8; min-width: 42px; }
+        .ev-title { font-size: 14px; }
+        .ev-loc { font-size: 12px; color: #888; }
+        .rem { padding: 4px 10px; font-size: 13px; color: #555; }
+        @media print { @page { margin: 1.5cm; } }
+      </style></head><body>
+      ${el.innerHTML}
+      </body></html>`
+    const win = window.open('', '_blank', 'width=800,height=700')
+    if (!win) return
+    win.document.write(html)
+    win.document.close()
+    win.focus()
+    setTimeout(() => { win.print(); }, 600)
+  }
+
+  const periodLabel = period === 'today' ? 'היום' : period === 'tomorrow' ? 'מחר' : '7 ימים קרובים'
+  const ALL_F = [
+    { key: 'ami', name: 'אמי', color: '#E91E63' },
+    { key: 'alex', name: 'אלכס', color: '#8E24AA' },
+    { key: 'itan', name: 'איתן', color: '#43A047' },
+    { key: 'assaf', name: 'אסף', color: '#1D4ED8' },
+    { key: 'danil', name: 'דניאל', color: '#15803D' },
+  ]
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }}>
+      <div className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl overflow-hidden" dir="rtl"
+        style={{ background: 'linear-gradient(160deg,#0a1628,#0f2040)', border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 24px 64px rgba(0,0,0,0.7)' }}>
+        {/* Header */}
+        <div className="px-6 py-4 flex items-center justify-between flex-row-reverse" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+          <h2 className="text-lg font-black text-white">📄 סיכום משפחתי</h2>
+          <button onClick={onClose} className="text-white/50 hover:text-white text-2xl leading-none">×</button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4 overflow-y-auto flex-1">
+          {/* Person selector */}
+          <div>
+            <div className="text-xs font-bold text-white/50 mb-2">עבור מי?</div>
+            <div className="flex flex-wrap gap-2 flex-row-reverse">
+              {ALL_F.map(p => (
+                <button key={p.key} onClick={() => togglePerson(p.key)}
+                  className="px-3 py-1.5 rounded-2xl text-sm font-bold transition active:scale-95"
+                  style={{ background: selectedPeople.includes(p.key) ? p.color : 'rgba(255,255,255,0.08)', color: selectedPeople.includes(p.key) ? '#fff' : 'rgba(255,255,255,0.4)', border: `1.5px solid ${selectedPeople.includes(p.key) ? p.color : 'rgba(255,255,255,0.12)'}`, boxShadow: selectedPeople.includes(p.key) ? `0 0 12px ${p.color}44` : 'none' }}>
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Period selector */}
+          <div>
+            <div className="text-xs font-bold text-white/50 mb-2">תקופה:</div>
+            <div className="flex gap-2">
+              {([['today','היום'],['tomorrow','מחר'],['week','שבוע']] as const).map(([k, label]) => (
+                <button key={k} onClick={() => setPeriod(k)}
+                  className="flex-1 py-2 rounded-2xl text-sm font-bold transition active:scale-95"
+                  style={{ background: period === k ? 'linear-gradient(135deg,#F59E0B,#F97316)' : 'rgba(255,255,255,0.08)', color: period === k ? '#fff' : 'rgba(255,255,255,0.5)', boxShadow: period === k ? '0 4px 12px rgba(245,158,11,0.4)' : 'none' }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div ref={printRef} className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <div className="text-white font-black text-base mb-1">לו&quot;ז משפחת אלוני — {periodLabel}</div>
+            <div className="text-white/40 text-xs mb-3">{format(now, 'd בMMMM yyyy', { locale: he })}</div>
+            {filteredEvents.length === 0 && filteredReminders.length === 0
+              ? <p className="text-white/35 text-sm text-center py-6">🌙 אין אירועים בתקופה זו</p>
+              : (
+                <div className="space-y-3">
+                  {selectedPeople.map(pKey => {
+                    const p = ALL_F.find(f => f.key === pKey)
+                    if (!p) return null
+                    const pEvs  = filteredEvents.filter(e => e.person === pKey).sort((a, b) => (a.start_time ?? '').localeCompare(b.start_time ?? ''))
+                    const pRems = filteredReminders.filter(r => r.person === pKey)
+                    if (pEvs.length === 0 && pRems.length === 0) return null
+                    return (
+                      <div key={pKey} className="rounded-xl p-2.5" style={{ background: p.color + '12', border: `1px solid ${p.color}25` }}>
+                        <div className="text-sm font-black mb-1.5" style={{ color: p.color }}>{p.name}</div>
+                        {pEvs.map(ev => (
+                          <div key={ev.id} className="flex items-center gap-2 text-sm py-0.5 text-white/80">
+                            <span className="font-black text-xs flex-shrink-0" style={{ color: p.color, minWidth: 40 }}>{ev.start_time?.slice(0, 5) || '--:--'}</span>
+                            <span className="flex-1">{ev.title}</span>
+                            {ev.location && <span className="text-white/35 text-xs truncate max-w-[80px]">📍{ev.location}</span>}
+                          </div>
+                        ))}
+                        {pRems.map(r => (
+                          <div key={r.id} className="flex items-center gap-2 text-xs py-0.5 text-white/45">
+                            <span>🔔</span><span>{r.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            }
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <button onClick={printSummary}
+            className="w-full text-white font-black py-3 rounded-2xl transition active:scale-95 flex items-center justify-center gap-2 text-sm"
+            style={{ background: 'linear-gradient(135deg,#3B82F6,#1D4ED8)', boxShadow: '0 4px 14px rgba(59,130,246,0.45)' }}>
+            🖨️ הדפס / שמור כ-PDF
           </button>
         </div>
       </div>
@@ -1173,7 +1457,7 @@ function RemindersPanel({ reminders, newVal, loading, onNewChange, onAdd, onTogg
   const done    = reminders.filter(r => r.completed)
   return (
     <div className="mt-6 no-print">
-      <div className="bg-white rounded-2xl shadow-md overflow-hidden border border-amber-100">
+      <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.07)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
         <div className="px-4 py-3 flex items-center gap-2 flex-row-reverse"
           style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
           <span className="text-lg">📋</span>
@@ -1204,8 +1488,8 @@ function RemindersPanel({ reminders, newVal, loading, onNewChange, onAdd, onTogg
                     style={{ minWidth: 28, minHeight: 28 }} title="סמן כבוצע">
                     <span className="text-amber-400 text-sm">○</span>
                   </button>
-                  <span className="flex-1 text-sm text-right text-gray-700">{r.text}</span>
-                  <button onClick={() => onDelete(r.id)} className="text-gray-300 hover:text-red-400 text-lg leading-none flex-shrink-0">×</button>
+                  <span className="flex-1 text-sm text-right text-white/80">{r.text}</span>
+                  <button onClick={() => onDelete(r.id)} className="text-white/30 hover:text-red-400 text-lg leading-none flex-shrink-0">×</button>
                 </li>
               ))}
             </ul>
@@ -1222,8 +1506,8 @@ function RemindersPanel({ reminders, newVal, loading, onNewChange, onAdd, onTogg
                       style={{ minWidth: 28, minHeight: 28, background: '#F59E0B' }} title="בטל סימון">
                       <span className="text-white text-sm">✓</span>
                     </button>
-                    <span className="flex-1 text-sm text-right text-gray-400 line-through">{r.text}</span>
-                    <button onClick={() => onDelete(r.id)} className="text-gray-300 hover:text-red-400 text-base leading-none flex-shrink-0">×</button>
+                    <span className="flex-1 text-sm text-right text-white/35 line-through">{r.text}</span>
+                    <button onClick={() => onDelete(r.id)} className="text-white/25 hover:text-red-400 text-base leading-none flex-shrink-0">×</button>
                   </li>
                 ))}
               </ul>
@@ -1233,7 +1517,8 @@ function RemindersPanel({ reminders, newVal, loading, onNewChange, onAdd, onTogg
             <input type="text" value={newVal} onChange={e => onNewChange(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && onAdd()}
               placeholder="הוסף תזכורת..." dir="rtl"
-              className="flex-1 border-2 border-amber-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-400 min-w-0 bg-amber-50/40" />
+              className="flex-1 rounded-xl px-3 py-2 text-sm focus:outline-none min-w-0 text-white/90 placeholder-white/30"
+              style={{ background: 'rgba(255,255,255,0.08)', border: '1.5px solid rgba(245,158,11,0.4)' }} />
             <button onClick={onAdd} disabled={!newVal.trim()}
               className="text-white text-sm font-black px-4 py-2 rounded-xl disabled:opacity-40 transition shadow-sm"
               style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>+</button>
@@ -1306,6 +1591,31 @@ export default function KidsSchedulePage() {
   // Weather full panel
   const [showWeatherPanel, setShowWeatherPanel] = useState(false)
 
+  // Verbal weather hero message
+  const [weatherHeroMsg, setWeatherHeroMsg] = useState('')
+  useEffect(() => {
+    fetch('/api/weather')
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then((d: { current?: { temp: number; rain: number; code: number }; tomorrow?: { min: number; max: number; rain: number; code: number }; error?: string }) => {
+        if (d.error || !d.current) return
+        const { temp, rain, code } = d.current
+        const icons: Record<string, string> = { sun: '☀️', partCloud: '🌤️', cloud: '⛅', overcast: '☁️', fog: '🌫️', drizzle: '🌦️', rain: '🌧️', snow: '❄️', storm: '⛈️' }
+        const getIcon = (c: number) => c === 0 ? icons.sun : c === 1 ? icons.partCloud : c === 2 ? icons.cloud : c === 3 ? icons.overcast : (c===45||c===48) ? icons.fog : (c>=51&&c<=55) ? icons.drizzle : (c>=61&&c<=65) ? icons.rain : (c>=71&&c<=77) ? icons.snow : c>=95 ? icons.storm : '🌡️'
+        const icon = getIcon(code)
+        let msg = `${icon} כרגע ${Math.round(temp)}°`
+        if (rain > 30) msg += ` | 💧${rain}% גשם`
+        if (d.tomorrow) {
+          const tIcon = getIcon(d.tomorrow.code)
+          msg += ` | מחר ${tIcon} ${Math.round(d.tomorrow.min)}°–${Math.round(d.tomorrow.max)}°`
+        }
+        setWeatherHeroMsg(msg)
+      })
+      .catch(() => {})
+  }, [])
+
+  // Summary / PDF modal
+  const [showSummaryModal, setShowSummaryModal] = useState(false)
+
   const dateStr = format(selectedDate, 'yyyy-MM-dd')
   const dayOfWeek = DAY_NAMES[selectedDate.getDay()]
 
@@ -1349,7 +1659,7 @@ export default function KidsSchedulePage() {
   const loadReminders = useCallback(async () => {
     setLoadingReminders(true)
     try {
-      const res = await fetch('/api/reminders?general=true')
+      const res = await fetch('/api/reminders?all=true')
       if (res.ok) setReminders(await res.json())
     } finally { setLoadingReminders(false) }
   }, [])
@@ -1523,6 +1833,13 @@ export default function KidsSchedulePage() {
       body: JSON.stringify({ date: format(new Date(),'yyyy-MM-dd'), person: null, text, completed: false }) })
     if (res.ok) { const data = await res.json(); setReminders(prev => [...prev, data]); setNewReminder('') }
   }
+
+  // Add person-specific reminder (for PersonRemindersStrip)
+  async function addPersonReminder(person: string, text: string) {
+    const res = await fetch('/api/reminders', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ date: format(new Date(),'yyyy-MM-dd'), person, text, completed: false }) })
+    if (res.ok) { const data = await res.json(); setReminders(prev => [...prev, data]) }
+  }
   async function toggleReminder(id: string, done: boolean) {
     setReminders(prev => prev.map(r => r.id===id ? {...r, completed: done} : r))
     await fetch(`/api/reminders?id=${id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ completed: done }) })
@@ -1690,7 +2007,11 @@ export default function KidsSchedulePage() {
   return (
     <>
       <style>{`
-        body { background: #F0F4F8; }
+        body {
+          background: linear-gradient(160deg,#05101f 0%,#0b1a34 35%,#0d1f3a 60%,#08111f 100%);
+          background-attachment: fixed;
+          min-height: 100vh;
+        }
         @media print {
           body { background: white !important; }
           .no-print { display: none !important; }
@@ -1714,6 +2035,15 @@ export default function KidsSchedulePage() {
 
       {showVideoModal && (
         <VideoSummaryModal onClose={() => setShowVideoModal(false)} />
+      )}
+
+      {/* ── SUMMARY / PDF MODAL ───────────────────────────────────────── */}
+      {showSummaryModal && (
+        <SummaryModal
+          allEvents={events}
+          reminders={reminders}
+          onClose={() => setShowSummaryModal(false)}
+        />
       )}
 
       {/* ── FULL WEATHER PANEL ────────────────────────────────────────── */}
@@ -1802,6 +2132,9 @@ export default function KidsSchedulePage() {
       </button>
       {/* Chat 🤖 is at bottom 148px — rendered by ChatWidget in layout */}
 
+      {/* Camera tile — right side */}
+      <CameraWidget />
+
       {/* ── PRINT (daily) ──────────────────────────────────────────────────── */}
       <div className="print-table w-full">
         <div style={{ fontFamily: 'Arial, sans-serif', direction: 'rtl', fontSize: 15 }}>
@@ -1837,123 +2170,160 @@ export default function KidsSchedulePage() {
       </div>
 
       {/* ── SCREEN ─────────────────────────────────────────────────────── */}
-      <div className="screen-only max-w-6xl mx-auto px-3 pb-12">
+      <div className="screen-only max-w-6xl mx-auto px-3 pb-16 pt-3">
 
-        {/* ── Hero header (all-in-one) ───────────────────────────────── */}
-        <div className="mb-5 no-print rounded-3xl overflow-hidden shadow-2xl"
-          style={{ background: 'linear-gradient(135deg,#0a0f1e 0%,#0f2744 40%,#1a3a6e 70%,#0f2744 100%)' }}>
+        {/* ── Hero header — redesigned ─────────────────────────────── */}
+        <div className="mb-0 no-print" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
 
-          {/* Top strip: family name + actions */}
-          <div className="px-3 pt-2 pb-2 sm:px-4 sm:pt-4 flex items-center justify-between gap-2 flex-row-reverse">
-
-            {/* Right: family name + live dot */}
-            <div className="flex items-center gap-2 flex-row-reverse shrink-0">
-              <span className="text-lg leading-none">🏠</span>
-              <h1 className="text-base font-black text-white tracking-tight leading-none">משפחת אלוני</h1>
+          {/* ① Top bar: brand + action buttons */}
+          <div className="px-3 pt-3 pb-2 flex items-center justify-between gap-2 flex-row-reverse">
+            <div className="flex items-center gap-2 flex-row-reverse flex-shrink-0">
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <h1 className="text-xs font-black text-white/35 tracking-widest uppercase">🏠 משפחת אלוני</h1>
             </div>
-
-            {/* Left: action buttons — mobile optimized */}
             <div className="flex items-center gap-1.5">
-              {/* Primary: Add via inbox — always visible */}
               <a href="/inbox"
-                className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-white font-black rounded-2xl transition shadow-lg shadow-emerald-500/40 px-3 py-2.5 text-sm sm:px-5 sm:py-3 sm:text-base whitespace-nowrap">
+                className="flex items-center gap-1.5 text-white font-black rounded-2xl transition px-3 py-2 text-sm whitespace-nowrap active:scale-95"
+                style={{ background: 'linear-gradient(135deg,#10B981,#059669)', boxShadow: '0 3px 12px rgba(16,185,129,0.4)' }}>
                 <span>✚</span>
-                <span className="hidden xs:inline sm:inline">הכנס נתונים</span>
+                <span className="hidden sm:inline">הכנס נתונים</span>
               </a>
-              {/* Add event directly */}
-              <button
-                onClick={() => openAddEvent(['ami','alex','itan'].includes(activeTab) ? activeTab : '')}
-                className="flex items-center gap-1 bg-blue-500/80 hover:bg-blue-400/80 active:bg-blue-600/80 text-white font-black rounded-2xl transition px-3 py-2.5 text-sm sm:px-4 sm:py-3 sm:text-base whitespace-nowrap"
-                title="הוסף אירוע">
-                <span>➕</span>
-                <span className="hidden sm:inline">אירוע</span>
+              <button onClick={() => openAddEvent(['ami','alex','itan'].includes(activeTab) ? activeTab : '')}
+                className="flex items-center gap-1 text-white font-black rounded-2xl transition px-3 py-2 text-sm whitespace-nowrap active:scale-95"
+                style={{ background: 'rgba(59,130,246,0.25)', border: '1.5px solid rgba(59,130,246,0.4)' }}>
+                <span>➕</span><span className="hidden sm:inline">אירוע</span>
               </button>
-              {/* AI video */}
-              <button
-                onClick={() => setShowVideoModal(true)}
-                className="bg-purple-500/80 hover:bg-purple-400/80 active:bg-purple-600/80 text-white text-sm font-bold w-10 h-10 rounded-xl transition flex items-center justify-center"
-                title="סיכום וידאו AI">
-                🎬
-              </button>
-              {/* Print — desktop only */}
+              <button onClick={() => setShowSummaryModal(true)}
+                className="w-9 h-9 rounded-xl text-white flex items-center justify-center transition active:scale-95 text-base"
+                style={{ background: 'rgba(168,85,247,0.25)', border: '1.5px solid rgba(168,85,247,0.4)' }}
+                title="סיכום PDF">📄</button>
+              <button onClick={() => setShowVideoModal(true)}
+                className="w-9 h-9 rounded-xl text-white flex items-center justify-center transition active:scale-95 text-base"
+                style={{ background: 'rgba(139,92,246,0.2)', border: '1.5px solid rgba(139,92,246,0.3)' }}
+                title="סיכום AI">🎬</button>
               <button onClick={() => window.print()}
-                className="bg-white/10 hover:bg-white/20 active:bg-white/30 text-white/70 hover:text-white text-sm w-10 h-10 rounded-xl transition hidden sm:flex items-center justify-center"
-                title="הדפס">
-                🖨️
-              </button>
-              {/* Logout */}
+                className="w-9 h-9 rounded-xl text-white/50 hover:text-white flex items-center justify-center transition active:scale-95 hidden sm:flex"
+                style={{ background: 'rgba(255,255,255,0.08)' }}
+                title="הדפס">🖨️</button>
               <button onClick={async () => { await fetch('/api/auth', { method: 'DELETE' }); window.location.href = '/login' }}
-                className="bg-white/10 hover:bg-white/20 text-white/50 hover:text-white/80 text-xs px-2 py-2.5 rounded-xl transition hidden sm:block">
+                className="text-white/40 hover:text-white/70 text-xs px-2 py-2 rounded-xl transition hidden sm:block"
+                style={{ background: 'rgba(255,255,255,0.07)' }}>
                 יציאה
               </button>
             </div>
           </div>
 
-          {/* Clock + compact weather row */}
-          <div className="px-4 pt-1 pb-2 flex items-center justify-between gap-3">
-            <div className="flex-1 flex justify-center">
+          {/* ② Clock + date + weather */}
+          <div className="px-4 pb-2 flex items-center justify-between gap-4">
+            <div>
               <LiveClock />
+              <div className="text-white/40 text-xs font-bold mt-0.5">{dateLabel}</div>
             </div>
-            {/* Compact weather pill — click for full forecast */}
-            <button
-              onClick={() => setShowWeatherPanel(true)}
-              title="לחץ לתחזית מלאה"
-              className="flex-shrink-0 flex items-center gap-1.5 bg-white/10 hover:bg-white/20 active:bg-white/25 rounded-xl px-3 py-1.5 transition-all active:scale-95 cursor-pointer">
+            <button onClick={() => setShowWeatherPanel(true)} title="תחזית מזג אוויר"
+              className="flex items-center gap-1.5 rounded-2xl px-3 py-2 transition active:scale-95"
+              style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}>
               <WeatherWidget compact />
             </button>
           </div>
 
-          {/* Date nav row — generous touch targets for mobile */}
-          <div className="px-3 pb-3">
-            {/* Current date label */}
-            <div className="text-center mb-2">
-              <span className="text-white/80 text-sm font-bold tracking-wide">
-                {dateLabel}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 justify-center">
+          {/* ③ 7-day date strip */}
+          <div className="px-3 pb-2">
+            <div className="flex items-center gap-1">
               <button onClick={() => setSelectedDate(d => subDays(d, 1))}
-                className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/30 flex items-center justify-center text-white font-bold text-lg transition">‹</button>
+                className="w-8 h-12 rounded-xl flex items-center justify-center text-white/60 hover:text-white font-bold text-lg transition active:scale-95 flex-shrink-0"
+                style={{ background: 'rgba(255,255,255,0.07)' }}>‹</button>
+              <div className="flex-1 flex gap-1">
+                {Array.from({ length: 7 }, (_, i) => {
+                  const d = addDays(selectedDate, i - 3)
+                  const dStr = format(d, 'yyyy-MM-dd')
+                  const dayName = DAY_NAMES[d.getDay()]
+                  const isSelected = dStr === dateStr
+                  const isTdy = dStr === format(new Date(), 'yyyy-MM-dd')
+                  return (
+                    <button key={i} onClick={() => setSelectedDate(new Date(dStr + 'T12:00:00'))}
+                      className="flex-1 py-1.5 rounded-2xl flex flex-col items-center gap-0.5 transition-all active:scale-95"
+                      style={{
+                        background: isSelected ? 'rgba(255,255,255,1)' : isTdy ? 'rgba(245,158,11,0.2)' : 'rgba(255,255,255,0.06)',
+                        boxShadow: isSelected ? '0 4px 14px rgba(255,255,255,0.25)' : isTdy ? '0 2px 8px rgba(245,158,11,0.3)' : 'none',
+                        border: isTdy && !isSelected ? '1.5px solid rgba(245,158,11,0.5)' : '1.5px solid transparent',
+                        transform: isSelected ? 'scale(1.06)' : 'scale(1)',
+                      }}>
+                      <span className="text-[10px] font-bold leading-none" style={{ color: isSelected ? '#1e3a5f' : 'rgba(255,255,255,0.45)' }}>{HE_DAYS[dayName]}</span>
+                      <span className="text-sm font-black leading-none" style={{ color: isSelected ? '#0f172a' : 'rgba(255,255,255,0.9)' }}>{format(d, 'd')}</span>
+                      {isTdy && <div className="w-1 h-1 rounded-full mt-0.5" style={{ background: isSelected ? '#059669' : '#F59E0B' }} />}
+                    </button>
+                  )
+                })}
+              </div>
+              <button onClick={() => setSelectedDate(d => addDays(d, 1))}
+                className="w-8 h-12 rounded-xl flex items-center justify-center text-white/60 hover:text-white font-bold text-lg transition active:scale-95 flex-shrink-0"
+                style={{ background: 'rgba(255,255,255,0.07)' }}>›</button>
+            </div>
+
+            {/* ④ Today / Tomorrow CTAs */}
+            <div className="flex gap-2 mt-2">
               <button onClick={() => setSelectedDate(new Date())}
-                className="flex-1 h-10 font-bold bg-amber-500/80 hover:bg-amber-400/80 active:bg-amber-600/80 text-white text-sm rounded-xl transition whitespace-nowrap max-w-[72px]">
+                className="flex-1 py-2 rounded-2xl font-black text-sm transition active:scale-95 text-white"
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 3px 10px rgba(245,158,11,0.4)' }}>
                 היום
               </button>
               <button onClick={() => setSelectedDate(addDays(new Date(), 1))}
-                className="flex-1 h-10 font-bold bg-sky-500/70 hover:bg-sky-400/70 active:bg-sky-600/70 text-white text-sm rounded-xl transition whitespace-nowrap max-w-[72px]">
+                className="flex-1 py-2 rounded-2xl font-black text-sm transition active:scale-95"
+                style={{ background: 'rgba(14,165,233,0.18)', border: '1.5px solid rgba(14,165,233,0.4)', color: '#38bdf8' }}>
                 מחר
               </button>
-              <input type="date" value={dateStr} onChange={e => setSelectedDate(new Date(e.target.value + 'T12:00:00'))}
-                className="bg-white/10 border border-white/20 text-white text-xs rounded-xl px-2 h-10 focus:outline-none focus:ring-2 focus:ring-white/40 w-[100px] sm:w-[110px]" />
-              <button onClick={() => setSelectedDate(d => addDays(d, 1))}
-                className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/30 flex items-center justify-center text-white font-bold text-lg transition">›</button>
             </div>
+            {/* ④b Verbal weather message */}
+            {weatherHeroMsg && (
+              <button onClick={() => setShowWeatherPanel(true)}
+                className="mt-2 w-full text-right text-xs font-bold px-3 py-2 rounded-2xl transition active:scale-95"
+                style={{ background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.2)', color: '#7dd3fc' }}
+                dir="rtl">
+                {weatherHeroMsg}
+              </button>
+            )}
           </div>
 
-          {/* Separator */}
-          <div className="mx-4 h-px bg-white/10" />
+          {/* ⑤ Glow separator */}
+          <div className="mx-4 h-px my-1" style={{ background: 'linear-gradient(90deg,transparent,rgba(255,255,255,0.1) 30%,rgba(255,255,255,0.1) 70%,transparent)' }} />
 
-          {/* Tab bar */}
-          <div className="px-4 py-2 flex gap-1 overflow-x-auto">
+          {/* ⑥ Tab bar */}
+          <div className="px-3 pb-3 pt-1 flex gap-2 overflow-x-auto">
             {TABS.map(tab => (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all flex-shrink-0
-                  ${activeTab === tab.key
-                    ? 'bg-white text-gray-900 shadow-md'
-                    : 'text-white/50 hover:text-white/90 hover:bg-white/10'
+              'href' in tab && tab.href ? (
+                <Link key={tab.key} href={tab.href}
+                  className="px-4 py-2.5 rounded-2xl font-black text-sm whitespace-nowrap transition-all flex-shrink-0 active:scale-95 text-amber-300/80 hover:text-amber-200"
+                  style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                  {tab.label}
+                </Link>
+              ) : (
+                <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                  className={`px-4 py-2.5 rounded-2xl font-black text-sm whitespace-nowrap transition-all flex-shrink-0 active:scale-95 ${
+                    activeTab === tab.key ? 'bg-white text-gray-900 shadow-lg' : 'text-white/50 hover:text-white hover:bg-white/12'
                   }`}>
-                {tab.label}
-              </button>
+                  {tab.label}
+                </button>
+              )
             ))}
           </div>
         </div>
 
-        {/* ── FAMILY TAB ─────────────────────────────────────────────── */}
+        {/* ── TAB CONTENT ────────────────────────────────────────────── */}
+        {/* ── Per-person sticky reminders strip (always visible) ──────── */}
+        <div className="pt-4 px-0">
+          <PersonRemindersStrip
+            reminders={reminders}
+            onToggle={toggleReminder}
+            onDelete={deleteReminder}
+            onAdd={addPersonReminder}
+          />
+        </div>
 
+        <div className="pt-1">
 
         {/* ── KIDS TAB ───────────────────────────────────────────────── */}
         {activeTab === 'kids' && (
-          loadingEvents ? <div className="text-center py-16 text-gray-400 text-xl">⏳ טוען...</div> : (
+          loadingEvents ? <div className="text-center py-16 text-white/40 text-xl">⏳ טוען...</div> : (
             <>
               {/* ── Kids cards ─────────────────────────────────────────── */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -2002,30 +2372,70 @@ export default function KidsSchedulePage() {
                       </div>
 
                       {/* Stats bar */}
-                      <div className="flex items-center justify-between px-4 py-2.5 border-b"
+                      <div className="px-4 py-3 border-b"
                         style={{ background: theme.noteBg + '88', borderColor: theme.border + '22' }}>
-                        <div className="text-xs font-bold" style={{ color: theme.textColor + 'aa' }}>
-                          {evs.length === 0 ? 'יום חופשי 🎉' : `${evs.length} פעילויות היום`}
-                        </div>
-                        {nextEv && nextEv.start_time && (
-                          <div className="text-xs font-black" style={{ color: theme.accent }}>
-                            ⏰ {nextEv.start_time.slice(0,5)} {nextEv.title.slice(0,20)}
+                        {nextEv && nextEv.start_time ? (
+                          <div className="flex items-center justify-between gap-2">
+                            <button onClick={() => openAddEvent(kid.key)}
+                              className="text-xs font-black px-2.5 py-1 rounded-xl transition flex-shrink-0"
+                              style={{ background: theme.badgeBg, color: theme.badgeText }}>
+                              ➕
+                            </button>
+                            <div className="flex-1 flex items-center gap-1.5 justify-end min-w-0">
+                              <span className="text-xs font-black truncate" style={{ color: theme.textColor }}>{nextEv.title.slice(0,22)}</span>
+                              <span className="text-xs font-black px-2 py-0.5 rounded-full flex-shrink-0"
+                                style={{ background: theme.accent, color: '#fff' }}>
+                                ⏰ {nextEv.start_time.slice(0,5)}
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between">
+                            <button onClick={() => openAddEvent(kid.key)}
+                              className="text-xs font-black px-2.5 py-1 rounded-xl transition"
+                              style={{ background: theme.badgeBg, color: theme.badgeText }}>
+                              ➕ הוסף
+                            </button>
+                            <span className="text-xs font-bold" style={{ color: theme.textColor + '88' }}>
+                              {evs.length === 0 ? 'יום חופשי 🎉' : `${evs.length} פעילויות`}
+                            </span>
                           </div>
                         )}
-                        <button onClick={() => openAddEvent(kid.key)}
-                          className="text-xs font-black px-2.5 py-1 rounded-xl transition"
-                          style={{ background: theme.badgeBg, color: theme.badgeText }}>
-                          ➕ הוסף
-                        </button>
                       </div>
 
                       {/* Events list */}
-                      <div className="flex-1 px-3 pt-2 pb-3 space-y-2">
+                      <div className="flex-1 px-3 pt-2 pb-2 space-y-2">
                         {evs.length === 0
                           ? <div className="text-center py-6 text-4xl opacity-20">🎈</div>
                           : evs.map(ev => <EventCard key={ev.id} event={ev} theme={theme} onToggle={toggleEvent} onDelete={deleteEvent} onEdit={openEditEvent} reactions={reactions[ev.id]||[]} onReact={emoji => toggleReaction(ev.id, emoji)} isPast={isEventPast(ev)} isNext={isEventNext(ev, events)} />)
                         }
                       </div>
+
+                      {/* ── Sticky reminders for this kid ── */}
+                      {(() => {
+                        const kidRems = reminders.filter(r => r.person === kid.key && !r.completed)
+                        if (kidRems.length === 0) return null
+                        return (
+                          <div className="mx-3 mb-3 rounded-2xl px-3 py-2.5" style={{ background: theme.accent + '18', border: `1px solid ${theme.accent}30` }}>
+                            <div className="text-xs font-black mb-1.5 flex items-center gap-1.5" style={{ color: theme.accent }}>
+                              <span>📌</span><span>תזכורות</span>
+                              <span className="text-[10px] opacity-60 font-bold">({kidRems.length})</span>
+                            </div>
+                            <div className="space-y-1">
+                              {kidRems.map(r => (
+                                <div key={r.id} className="flex items-center gap-2 flex-row-reverse">
+                                  <button onClick={() => toggleReminder(r.id, true)}
+                                    className="w-5 h-5 rounded-full border flex-shrink-0 flex items-center justify-center transition"
+                                    style={{ borderColor: theme.accent + '70' }}>
+                                    <span className="text-[9px]" style={{ color: theme.accent }}>○</span>
+                                  </button>
+                                  <span className="flex-1 text-xs text-right" style={{ color: theme.textColor + 'cc' }}>{r.text}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })()}
                     </div>
                   )
                 })}
@@ -2038,7 +2448,7 @@ export default function KidsSchedulePage() {
                 const adultThemes = { assaf: ADULT_THEMES.assaf, danil: ADULT_THEMES.danil }
                 return (
                   <div className="mt-4">
-                    <div className="text-xs font-bold text-white/50 mb-2 text-right">גם היום:</div>
+                    <div className="text-xs font-bold text-white/40 mb-2 text-right tracking-wide uppercase">גם היום:</div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {adultsWithEvents.map(adult => {
                         const theme = getTheme(adult.key)
@@ -2091,7 +2501,7 @@ export default function KidsSchedulePage() {
         {/* ── PARENTS TAB ─────────────────────────────────────────────── */}
         {activeTab === 'parents' && (
           loadingEvents
-            ? <div className="text-center py-16 text-gray-400 text-xl">⏳ טוען...</div>
+            ? <div className="text-center py-16 text-white/40 text-xl">⏳ טוען...</div>
             : (
             <div className="max-w-4xl mx-auto" dir="rtl">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2238,16 +2648,20 @@ export default function KidsSchedulePage() {
                 return (
                 <div key={person.key}
                   className="rounded-3xl overflow-hidden shadow-2xl"
-                  style={{ background: 'rgba(20,20,35,0.7)', border: `2px solid ${isExpanded ? person.color + 'aa' : person.color + '55'}`, backdropFilter: 'blur(16px)', transition: 'border-color 0.2s' }}>
+                  style={{ background: 'rgba(255,255,255,0.06)', border: `1.5px solid ${isExpanded ? person.color + 'cc' : person.color + '44'}`, backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', boxShadow: isExpanded ? `0 0 0 1px ${person.color}22, 0 20px 40px rgba(0,0,0,0.4)` : '0 8px 32px rgba(0,0,0,0.3)', transition: 'all 0.2s' }}>
 
                   {/* Person header — clickable to expand full day */}
                   <button
                     className="w-full flex items-center gap-3 px-5 py-3 text-right transition-all active:opacity-70"
                     style={{ background: `${person.color}${isExpanded ? '35' : '22'}`, borderBottom: `1px solid ${person.color}33` }}
                     onClick={() => setExpandedNowPerson(isExpanded ? null : person.key)}>
-                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-xl flex-shrink-0"
-                      style={{ background: person.color + '33', border: `2px solid ${person.color}66` }}>
-                      {person.emoji}
+                    <div className="w-11 h-11 rounded-full overflow-hidden flex-shrink-0 border-2"
+                      style={{ borderColor: person.color + 'aa' }}>
+                      {(kidPhotos[person.key] || person.photo)
+                        ? <img src={kidPhotos[person.key] || person.photo!} alt={person.name} className="w-full h-full object-cover" />
+                        : <div className="w-full h-full flex items-center justify-center text-xl"
+                            style={{ background: person.color + '33' }}>{person.emoji}</div>
+                      }
                     </div>
                     <span className="font-black text-white text-lg">{person.name}</span>
                     <span className="mr-auto text-[11px] font-bold px-2 py-0.5 rounded-full"
@@ -2407,6 +2821,7 @@ export default function KidsSchedulePage() {
             onToggle={toggleGrocery} onDelete={deleteGrocery} onClearDone={clearDoneGroceries} />
         </div>
 
+        </div>{/* ── end tab content wrapper ── */}
       </div>
 
       {/* ── Kid Photo Gallery ──────────────────────────────────────────── */}

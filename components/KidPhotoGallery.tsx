@@ -134,19 +134,42 @@ export default function KidPhotoGallery({ kid, onClose, onProfileChanged }: Prop
     } finally { setGenerating(false) }
   }
 
-  async function keepVariant(url: string, index: number) {
-    const res = await fetch('/api/kid-profiles', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kid_key: kid.key, photo_url: url, set_as_profile: photos.length === 0 }),
-    })
-    if (res.ok) {
-      const newPhoto = await res.json()
-      setPhotos(prev => [newPhoto, ...prev])
-      if (photos.length === 0) onProfileChanged(kid.key, url)
-      setVariants(prev => prev.filter((_, j) => j !== index))
-      setFallbacks(prev => prev.filter((_, j) => j !== index))
-    }
+  async function keepVariant(variantUrl: string, index: number) {
+    setUploading(true)
+    try {
+      // Download via server-side proxy (avoids CORS), then upload to our storage
+      let savedUrl = variantUrl
+      try {
+        const proxyRes = await fetch('/api/proxy-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: variantUrl }),
+        })
+        if (proxyRes.ok) {
+          const blob = await proxyRes.blob()
+          const fd = new FormData()
+          fd.append('file', new File([blob], `ai-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' }))
+          const uploadRes = await fetch('/api/upload', { method: 'POST', body: fd })
+          if (uploadRes.ok) {
+            const { url: storedUrl } = await uploadRes.json()
+            if (storedUrl) savedUrl = storedUrl
+          }
+        }
+      } catch { /* keep original URL as fallback */ }
+
+      const res = await fetch('/api/kid-profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kid_key: kid.key, photo_url: savedUrl, set_as_profile: photos.length === 0 }),
+      })
+      if (res.ok) {
+        const newPhoto = await res.json()
+        setPhotos(prev => [newPhoto, ...prev])
+        if (photos.length === 0) onProfileChanged(kid.key, savedUrl)
+        setVariants(prev => prev.filter((_, j) => j !== index))
+        setFallbacks(prev => prev.filter((_, j) => j !== index))
+      }
+    } finally { setUploading(false) }
   }
 
   function skipVariant(index: number) {
