@@ -244,6 +244,25 @@ const quickLinks = [
   { url: "https://www.alternativeathens.com",       label: "🗺️ Alternative Athens",  desc: "סיורים מקוריים"   },
   { url: "https://athensforkids.com",               label: "👶 Athens For Kids",     desc: "לילדים"           },
   { url: "https://www.visitgreece.gr",              label: "🇬🇷 Visit Greece",        desc: "המדריך הרשמי"     },
+  { url: "https://www.hellenicseaways.gr",          label: "🏝️ אי אייגינה — מעבורות",desc: "40 דק׳ מנמל פיראוס" },
+  { url: "https://www.athenstransport.com",         label: "🚇 תחבורה באתונה",         desc: "לוחות זמנים ומפות" },
+];
+
+const neighborhoods = [
+  { name: "פסירי",      dist: "הבסיס",             stars: 5, desc: "היפ, מרכזי, גרפיטי, ברים, מוזיקה" },
+  { name: "מונסטירקי",  dist: "2 דק׳ הליכה",        stars: 5, desc: "שוק, אקרופוליס, מסעדות, תחבורה"   },
+  { name: "פלאקה",      dist: "5 דק׳",               stars: 4, desc: "סמטאות היסטוריות, טברנות, ממש מתחת לאקרופוליס" },
+  { name: "קולונקי",    dist: "20 דק׳ הליכה",        stars: 4, desc: "מותגים, בוטיקים יווניים, קפה איכותי" },
+  { name: "גליפדה",     dist: "20 דק׳ נסיעה",        stars: 4, desc: "חוף + קניות, ריביירה אתונאית"       },
+  { name: "אקסרכיה",   dist: "15 דק׳ הליכה",        stars: 4, desc: "וינטג׳, יד שנייה, חנויות רקורדס"     },
+];
+
+const shopping = [
+  { name: "Ancient Greek Sandals", area: "קולונקי",     desc: "סנדלי עור יווניים קלאסיים — מתנה שלא תישכח",  url: "https://www.ancient-greek-sandals.com" },
+  { name: "Korres",                area: "בכל מקום",    desc: "קוסמטיקה יוונית טבעית — הרבה יותר זולה כאן",  url: "https://www.korres.com"                },
+  { name: "שוק פשפשים",           area: "מונסטירקי",   desc: "אנטיקים, תקליטים, תכשיטים — ראשון בבוקר!",    url: "https://goo.gl/maps/monastiraki-flea"  },
+  { name: "Yesterday's Bread",     area: "אקסרכיה",     desc: "וינטג׳ מפריז ואמסטרדם — לבני הנוער!",          url: "https://goo.gl/maps/YesterdaysBread"   },
+  { name: "Folli Follie",          area: "בכל הקניונים", desc: "תכשיטים יווניים מפורסמים — מחיר סביר",         url: "https://www.follifollie.com"           },
 ];
 
 const tips = [
@@ -254,6 +273,8 @@ const tips = [
       "כרטיס משולב 7 אתרים = 30€ — חוסך הרבה",
       "כרטיס מטרו יומי = 4.50€ לאדם",
       "Tax Free בשדה על קניות מעל 50€ — שמרו קבלות!",
+      "שעת צהריים (14:00–17:00) — לכו לחוף, העיר שקטה",
+      "ערבים הם הזמן הכי טוב — האקשן מתחיל ב-21:00",
     ],
   },
   {
@@ -263,6 +284,24 @@ const tips = [
       "מונסטירקי ← סינטגמה: 2 תחנות מטרו",
       "Bolt / FreeNow — עדיפים על מוניות רגילות",
       "רוב האטרקציות ממרכז — מגיעים ברגל!",
+    ],
+  },
+  {
+    title: "📱 אפליקציות חובה",
+    items: [
+      "Google Maps — תחבורה ציבורית מושלמת",
+      "Athens Voice — אירועים, מוזיקה חיה, הצגות",
+      "Viva.gr — כרטיסים לאירועים ביוון",
+      "Bolt / FreeNow — מוניות, מומלץ על מוניות רגילות",
+    ],
+  },
+  {
+    title: "🛡️ בטיחות ומספרי חירום",
+    items: [
+      "אתונה בטוחה מאוד לתיירים, גם בלילה בפסירי",
+      "שמרו על תיקים בתחבורה ציבורית ובשווקים",
+      "חירום כללי: 112",
+      "משטרת תיירים: 171",
     ],
   },
   {
@@ -484,6 +523,63 @@ export default function AthensPage() {
                 ))}
               </div>
             </div>
+
+            {/* Neighborhoods */}
+            <div className="rounded-2xl p-4"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <h3 className="font-black text-white/85 mb-3 text-right">🏘️ שכונות — מה איפה</h3>
+              <div className="space-y-2">
+                {neighborhoods.map((n, i) => (
+                  <div key={i} className="flex items-center justify-between gap-2 text-sm"
+                    style={{ borderBottom: i < neighborhoods.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none', paddingBottom: i < neighborhoods.length - 1 ? '8px' : '0' }}>
+                    <div className="text-right flex-1">
+                      <span className="font-black text-white/85">{n.name}</span>
+                      <span className="text-white/40 text-xs mr-2">· {n.dist}</span>
+                      <div className="text-xs text-white/50 mt-0.5">{n.desc}</div>
+                    </div>
+                    <div className="flex gap-0.5 flex-shrink-0">
+                      {Array.from({ length: 5 }, (_, si) => (
+                        <span key={si} className="text-[10px]" style={{ opacity: si < n.stars ? 1 : 0.2 }}>⭐</span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Shopping */}
+            <div className="rounded-2xl p-4"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <h3 className="font-black text-white/85 mb-3 text-right">🛍️ קניות — לא להחמיץ</h3>
+              <div className="space-y-2">
+                {shopping.map((s, i) => (
+                  <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
+                    className="flex items-start justify-between gap-2 transition-opacity hover:opacity-80"
+                    style={{ borderBottom: i < shopping.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none', paddingBottom: i < shopping.length - 1 ? '8px' : '0' }}>
+                    <div className="text-right flex-1">
+                      <div className="font-black text-white/85 text-sm">{s.name}</div>
+                      <div className="text-xs text-white/45 mt-0.5">{s.desc}</div>
+                    </div>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full flex-shrink-0 mt-0.5 font-bold"
+                      style={{ background: 'rgba(245,158,11,0.15)', color: '#fcd34d', border: '1px solid rgba(245,158,11,0.25)' }}>
+                      {s.area}
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </div>
+
+            {/* Day trip callout */}
+            <a href="https://www.hellenicseaways.gr" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-3 rounded-2xl p-4 transition-all hover:-translate-y-0.5"
+              style={{ background: 'rgba(14,165,233,0.12)', border: '1.5px solid rgba(56,189,248,0.25)' }}>
+              <span className="text-3xl flex-shrink-0">🏝️</span>
+              <div className="text-right flex-1">
+                <div className="font-black text-sky-300 text-sm">יום טיול — אי אייגינה</div>
+                <div className="text-xs text-white/55 mt-0.5">40 דקות מעבורת מנמל פיראוס · ים, מקדש, פיסטוקים אגדיים, כפר ים-תיכוני</div>
+              </div>
+              <span className="text-sky-400/60 text-lg flex-shrink-0">›</span>
+            </a>
 
             {/* Tips sections */}
             {tips.map((section, i) => (
