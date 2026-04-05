@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
       media_type:    mediaType,
       mime_type:     file.type,
       file_size:     file.size,
+      file_hash:     null,
       width:         null,
       height:        null,
       duration_sec:  null,

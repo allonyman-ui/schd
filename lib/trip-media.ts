@@ -23,6 +23,7 @@ export interface TripMedia {
   media_type: 'photo' | 'video'
   mime_type: string | null
   file_size: number | null
+  file_hash: string | null
   width: number | null
   height: number | null
   duration_sec: number | null
@@ -112,6 +113,60 @@ export async function getTripMedia(
   const { data, error, count } = await query
   if (error) throw error
   return { items: data ?? [], total: count ?? 0 }
+}
+
+// Check if a file with this hash already exists in the trip (ready status)
+export async function findByHash(tripId: string, fileHash: string): Promise<TripMedia | null> {
+  const supabase = createServiceClient()
+  const { data } = await supabase
+    .from('trip_media')
+    .select('*')
+    .eq('trip_id', tripId)
+    .eq('file_hash', fileHash)
+    .eq('status', 'ready')
+    .limit(1)
+    .single()
+  return data ?? null
+}
+
+// Scan a trip and soft-delete all duplicate rows (keeps earliest per hash)
+// Returns number of rows removed
+export async function dedupTrip(tripId: string): Promise<number> {
+  const supabase = createServiceClient()
+
+  // Find all hashes that have more than one ready row
+  const { data: allRows } = await supabase
+    .from('trip_media')
+    .select('id, file_hash, created_at')
+    .eq('trip_id', tripId)
+    .eq('status', 'ready')
+    .not('file_hash', 'is', null)
+    .order('created_at', { ascending: true })
+
+  if (!allRows || allRows.length === 0) return 0
+
+  // Group by hash, keep first (earliest), collect rest for deletion
+  const seen = new Map<string, boolean>()
+  const toDelete: string[] = []
+
+  for (const row of allRows) {
+    const hash = row.file_hash as string
+    if (seen.has(hash)) {
+      toDelete.push(row.id)
+    } else {
+      seen.set(hash, true)
+    }
+  }
+
+  if (toDelete.length === 0) return 0
+
+  const { error } = await supabase
+    .from('trip_media')
+    .update({ status: 'deleted' })
+    .in('id', toDelete)
+
+  if (error) throw error
+  return toDelete.length
 }
 
 export async function insertTripMedia(

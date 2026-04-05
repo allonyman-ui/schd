@@ -5,7 +5,7 @@ import type { Trip } from '@/lib/trip-media'
 import { FAMILY_MEMBERS } from '@/lib/types'
 
 // ── Types ──────────────────────────────────────────────────────────
-type ItemStatus = 'pending' | 'uploading' | 'done' | 'error'
+type ItemStatus = 'pending' | 'uploading' | 'done' | 'duplicate' | 'error'
 
 interface UploadItem {
   id: string
@@ -65,7 +65,11 @@ export default function UploadZone({ trip, onUploaded }: Props) {
   const [items, setItems]           = useState<UploadItem[]>([])
   const [isRunning, setIsRunning]   = useState(false)
   const [showErrors, setShowErrors] = useState(false)
-  const [dupCount, setDupCount]     = useState(0)
+  const [dupCount, setDupCount]     = useState(0)          // client-side fingerprint dupes
+  const [dedupReport, setDedupReport] = useState<{       // post-upload dedup report
+    skippedByHash: number   // already in DB (hash match)
+    removedFromDb: number   // DB duplicates cleaned up
+  } | null>(null)
   // Unique IDs so multiple UploadZone instances don't clash
   const galleryInputId = useRef(`gallery-${uid()}`)
   const cameraInputId  = useRef(`camera-${uid()}`)
@@ -110,14 +114,36 @@ export default function UploadZone({ trip, onUploaded }: Props) {
     setItems(Array.from(itemsRef.current.values()))
   }
 
+  // ── Hash a file (first+last 2MB for speed on large videos) ──────────
+  async function hashFile(file: File): Promise<string> {
+    const CHUNK = 2 * 1024 * 1024
+    let buf: ArrayBuffer
+    if (file.size <= CHUNK * 2) {
+      buf = await file.arrayBuffer()
+    } else {
+      const head = await file.slice(0, CHUNK).arrayBuffer()
+      const tail = await file.slice(file.size - CHUNK).arrayBuffer()
+      const merged = new Uint8Array(head.byteLength + tail.byteLength)
+      merged.set(new Uint8Array(head), 0)
+      merged.set(new Uint8Array(tail), head.byteLength)
+      buf = merged.buffer
+    }
+    const digest = await crypto.subtle.digest('SHA-256', buf)
+    const hex = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('')
+    return `${hex}-${file.size}` // size suffix further prevents collisions
+  }
+
   // ── Upload one file ───────────────────────────────────────────────
-  async function uploadOne(item: UploadItem, uploaderName: string): Promise<void> {
+  async function uploadOne(item: UploadItem, uploaderName: string): Promise<'done' | 'duplicate' | 'error'> {
     updateItem(item.id, { status: 'uploading', progress: 0 })
     const file = item.file
     const mimeType = getMimeType(file)
 
     try {
-      // Step 1 — extract EXIF (photos only, silent on failure)
+      // Step 1 — compute file hash (for server-side dedup)
+      const fileHash = await hashFile(file)
+
+      // Step 2 — extract EXIF metadata (photos only)
       let takenAt: string | undefined
       let latitude: number | undefined
       let longitude: number | undefined
@@ -136,7 +162,6 @@ export default function UploadZone({ trip, onUploaded }: Props) {
           if (exif?.GPSLatitude != null && exif?.GPSLongitude != null) {
             latitude  = exif.GPSLatitude
             longitude = exif.GPSLongitude
-            // Reverse geocode via Nominatim (free, no key needed)
             try {
               const geo = await fetch(
                 `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=he`,
@@ -147,12 +172,12 @@ export default function UploadZone({ trip, onUploaded }: Props) {
                 const a = geoData.address ?? {}
                 locationName = a.city ?? a.town ?? a.village ?? a.county ?? a.country ?? undefined
               }
-            } catch { /* skip geocoding on error */ }
+            } catch { /* geocoding optional */ }
           }
-        } catch { /* EXIF not available */ }
+        } catch { /* EXIF optional */ }
       }
 
-      // Step 2 — presign
+      // Step 3 — presign (server checks hash → returns duplicate:true if exists)
       const presignRes = await fetchWithTimeout('/api/upload-media/presign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -163,6 +188,7 @@ export default function UploadZone({ trip, onUploaded }: Props) {
           filename:      file.name,
           content_type:  mimeType,
           file_size:     file.size,
+          file_hash:     fileHash,
           taken_at:      takenAt,
           latitude,
           longitude,
@@ -174,14 +200,23 @@ export default function UploadZone({ trip, onUploaded }: Props) {
         const err = await presignRes.json().catch(() => ({}))
         throw new Error(err.error ?? `Presign ${presignRes.status}`)
       }
-      const { signed_url, media_id } = await presignRes.json()
 
-      // Step 3 — PUT directly to Supabase (with XHR for progress)
+      const presignData = await presignRes.json()
+
+      // Server says this hash already exists → skip upload
+      if (presignData.duplicate) {
+        updateItem(item.id, { status: 'duplicate', progress: 100 })
+        return 'duplicate'
+      }
+
+      const { signed_url, media_id } = presignData
+
+      // Step 4 — PUT directly to Supabase with progress
       await xhrUpload(signed_url, file, mimeType, (pct) => {
         updateItem(item.id, { progress: pct })
       })
 
-      // Step 4 — confirm
+      // Step 5 — confirm
       const confirmRes = await fetchWithTimeout('/api/upload-media/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -190,8 +225,10 @@ export default function UploadZone({ trip, onUploaded }: Props) {
       if (!confirmRes.ok) throw new Error(`Confirm ${confirmRes.status}`)
 
       updateItem(item.id, { status: 'done', progress: 100 })
+      return 'done'
     } catch (e: unknown) {
       updateItem(item.id, { status: 'error', error: (e as Error).message })
+      return 'error'
     }
   }
 
@@ -200,35 +237,61 @@ export default function UploadZone({ trip, onUploaded }: Props) {
     if (!uploader || isRunning) return
     setIsRunning(true)
     setShowErrors(false)
+    setDedupReport(null)
 
-    // Collect pending IDs in order
     const queue = Array.from(itemsRef.current.values())
       .filter(it => it.status === 'pending' || it.status === 'error')
       .map(it => it.id)
 
-    // Reset errors to pending for retry
+    // Reset errors → pending for retry
     queue.forEach(id => {
       const it = itemsRef.current.get(id)!
       if (it.status === 'error') updateItem(id, { status: 'pending', progress: 0, error: undefined })
     })
 
-    let qi = 0 // queue index
+    // Counters (shared across workers via closure mutation — safe because JS is single-threaded for this)
+    let skippedByHash = 0
+    let qi = 0
+
     async function worker() {
       while (qi < queue.length) {
         const id = queue[qi++]
         const item = itemsRef.current.get(id)
-        if (!item || item.status === 'done') continue
-        await uploadOne(item, uploader!)
+        if (!item || item.status === 'done' || item.status === 'duplicate') continue
+        const result = await uploadOne(item, uploader!)
+        if (result === 'duplicate') skippedByHash++
       }
     }
 
-    // Launch N workers concurrently
     await Promise.all(Array.from({ length: CONCURRENCY }, worker))
 
+    // ── Post-batch DB dedup scan ──────────────────────────────────────
+    let removedFromDb = 0
+    try {
+      const dedupRes = await fetch('/api/dedup-media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trip_id: trip.id }),
+      })
+      if (dedupRes.ok) {
+        const d = await dedupRes.json()
+        removedFromDb = d.removed ?? 0
+      }
+    } catch { /* dedup scan is best-effort */ }
+
     setIsRunning(false)
-    const allDone = Array.from(itemsRef.current.values()).every(it => it.status === 'done')
-    if (allDone) onUploaded?.()
-    else setShowErrors(true)
+
+    // Show report if anything was deduplicated
+    if (skippedByHash > 0 || removedFromDb > 0) {
+      setDedupReport({ skippedByHash, removedFromDb })
+    }
+
+    const finalItems = Array.from(itemsRef.current.values())
+    const hasErrors = finalItems.some(it => it.status === 'error')
+    if (hasErrors) setShowErrors(true)
+
+    const uploaded = finalItems.filter(it => it.status === 'done').length
+    if (uploaded > 0) onUploaded?.()
   }, [uploader, isRunning, trip, onUploaded])
 
   // ── Remove a pending item ─────────────────────────────────────────
@@ -250,19 +313,20 @@ export default function UploadZone({ trip, onUploaded }: Props) {
   }
 
   // ── Derived stats ─────────────────────────────────────────────────
-  const total     = items.length
-  const pending   = items.filter(it => it.status === 'pending').length
-  const uploading = items.filter(it => it.status === 'uploading').length
-  const done      = items.filter(it => it.status === 'done').length
-  const errors    = items.filter(it => it.status === 'error').length
+  const total      = items.length
+  const pending    = items.filter(it => it.status === 'pending').length
+  const uploading  = items.filter(it => it.status === 'uploading').length
+  const done       = items.filter(it => it.status === 'done').length
+  const duplicates = items.filter(it => it.status === 'duplicate').length
+  const errors     = items.filter(it => it.status === 'error').length
   const overallPct = total ? Math.round(
-    items.reduce((s, it) => s + (it.status === 'done' ? 100 : it.progress), 0) / total
+    items.reduce((s, it) => s + (['done','duplicate'].includes(it.status) ? 100 : it.progress), 0) / total
   ) : 0
 
-  const canUpload = !isRunning && uploader && (pending + errors) > 0
-  const allFinished = total > 0 && done === total
+  const canUpload   = !isRunning && uploader && (pending + errors) > 0
+  const allFinished = total > 0 && (done + duplicates) === total && errors === 0
 
-  // Items to show in list: uploading + errors (max 20); skip done to save DOM
+  // Items to show: uploading + errors only (skip done/duplicate to save DOM)
   const visibleItems = items.filter(it => it.status === 'uploading' || it.status === 'error').slice(0, 20)
 
   return (
@@ -333,12 +397,34 @@ export default function UploadZone({ trip, onUploaded }: Props) {
         aria-hidden="true"
       />
 
-      {/* ── Duplicate notice ── */}
+      {/* ── Client-side fingerprint dupe notice ── */}
       {dupCount > 0 && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs" style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }}>
           <span>⚠️</span>
-          <span>{dupCount} קובץ כפול זוהה והוסר אוטומטית</span>
+          <span>{dupCount} {dupCount === 1 ? 'קובץ כפול זוהה' : 'קבצים כפולים זוהו'} והוסרו מהרשימה</span>
           <button onClick={() => setDupCount(0)} className="mr-auto opacity-60 hover:opacity-100">✕</button>
+        </div>
+      )}
+
+      {/* ── Post-upload dedup report ── */}
+      {dedupReport && (dedupReport.skippedByHash > 0 || dedupReport.removedFromDb > 0) && (
+        <div className="rounded-2xl p-4 flex flex-col gap-2 text-sm" style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)' }}>
+          <div className="flex items-center justify-between">
+            <span className="text-yellow-300 font-bold">דוח כפילויות</span>
+            <button onClick={() => setDedupReport(null)} className="text-white/30 hover:text-white/60 text-xs">✕</button>
+          </div>
+          {dedupReport.skippedByHash > 0 && (
+            <div className="flex items-center gap-2 text-yellow-200/80">
+              <span>⏭️</span>
+              <span><strong>{dedupReport.skippedByHash}</strong> {dedupReport.skippedByHash === 1 ? 'קובץ' : 'קבצים'} כבר קיימים באלבום — לא הועלו שוב</span>
+            </div>
+          )}
+          {dedupReport.removedFromDb > 0 && (
+            <div className="flex items-center gap-2 text-yellow-200/80">
+              <span>🗑️</span>
+              <span><strong>{dedupReport.removedFromDb}</strong> {dedupReport.removedFromDb === 1 ? 'כפיל נמצא ונמחק' : 'כפילויות נמצאו ונמחקו'} מהאלבום</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -349,8 +435,9 @@ export default function UploadZone({ trip, onUploaded }: Props) {
           <div className="flex items-center justify-between text-sm">
             <div className="flex gap-3 text-white/60">
               {pending + uploading > 0 && <span>⏳ {pending + uploading}</span>}
-              {done   > 0 && <span className="text-green-400">✅ {done}</span>}
-              {errors > 0 && <span className="text-red-400">❌ {errors}</span>}
+              {done       > 0 && <span className="text-green-400">✅ {done}</span>}
+              {duplicates > 0 && <span className="text-yellow-400">⚠️ {duplicates} כפולים</span>}
+              {errors     > 0 && <span className="text-red-400">❌ {errors}</span>}
             </div>
             <span className="text-white font-bold">{total} קבצים</span>
           </div>
@@ -414,7 +501,7 @@ export default function UploadZone({ trip, onUploaded }: Props) {
           {isRunning ? (
             <span className="flex items-center justify-center gap-2">
               <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
-              מעלה {done}/{total} ({overallPct}%)
+              בודק כפילויות ומעלה... {done + duplicates}/{total} ({overallPct}%)
             </span>
           ) : errors > 0 ? (
             `נסה שוב ${errors} שנכשלו`
@@ -428,8 +515,9 @@ export default function UploadZone({ trip, onUploaded }: Props) {
       {allFinished && (
         <div className="text-center py-4 rounded-2xl" style={{ background: 'rgba(34,197,94,0.1)' }}>
           <div className="text-4xl mb-2">🎉</div>
-          <p className="text-white font-black">כל הקבצים הועלו!</p>
-          <p className="text-white/50 text-sm mt-1">{done} קבצים נוספו לאלבום</p>
+          <p className="text-white font-black">סיום!</p>
+          {done > 0 && <p className="text-green-400 text-sm mt-1">✅ {done} {done === 1 ? 'קובץ' : 'קבצים'} הועלו לאלבום</p>}
+          {duplicates > 0 && <p className="text-yellow-400 text-sm mt-0.5">⚠️ {duplicates} {duplicates === 1 ? 'קובץ' : 'קבצים'} כבר קיימים — לא הועלו שוב</p>}
         </div>
       )}
     </div>
