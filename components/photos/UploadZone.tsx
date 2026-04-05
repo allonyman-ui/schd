@@ -117,17 +117,56 @@ export default function UploadZone({ trip, onUploaded }: Props) {
     const mimeType = getMimeType(file)
 
     try {
-      // Step 1 — presign
+      // Step 1 — extract EXIF (photos only, silent on failure)
+      let takenAt: string | undefined
+      let latitude: number | undefined
+      let longitude: number | undefined
+      let locationName: string | undefined
+
+      if (mimeType.startsWith('image/')) {
+        try {
+          const exifr = (await import('exifr')).default
+          const exif = await exifr.parse(file, {
+            pick: ['DateTimeOriginal', 'CreateDate', 'GPSLatitude', 'GPSLongitude'],
+            reviveValues: true,
+          })
+          if (exif?.DateTimeOriginal || exif?.CreateDate) {
+            takenAt = (exif.DateTimeOriginal ?? exif.CreateDate).toISOString()
+          }
+          if (exif?.GPSLatitude != null && exif?.GPSLongitude != null) {
+            latitude  = exif.GPSLatitude
+            longitude = exif.GPSLongitude
+            // Reverse geocode via Nominatim (free, no key needed)
+            try {
+              const geo = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=he`,
+                { headers: { 'User-Agent': 'allony-family-app/1.0' } }
+              )
+              if (geo.ok) {
+                const geoData = await geo.json()
+                const a = geoData.address ?? {}
+                locationName = a.city ?? a.town ?? a.village ?? a.county ?? a.country ?? undefined
+              }
+            } catch { /* skip geocoding on error */ }
+          }
+        } catch { /* EXIF not available */ }
+      }
+
+      // Step 2 — presign
       const presignRes = await fetchWithTimeout('/api/upload-media/presign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          trip_id:      trip.id,
-          trip_slug:    trip.slug,
-          uploader:     uploaderName,
-          filename:     file.name,
-          content_type: mimeType,
-          file_size:    file.size,
+          trip_id:       trip.id,
+          trip_slug:     trip.slug,
+          uploader:      uploaderName,
+          filename:      file.name,
+          content_type:  mimeType,
+          file_size:     file.size,
+          taken_at:      takenAt,
+          latitude,
+          longitude,
+          location_name: locationName,
         }),
       }, 30_000)
 
@@ -137,12 +176,12 @@ export default function UploadZone({ trip, onUploaded }: Props) {
       }
       const { signed_url, media_id } = await presignRes.json()
 
-      // Step 2 — PUT directly to Supabase (with XHR for progress)
+      // Step 3 — PUT directly to Supabase (with XHR for progress)
       await xhrUpload(signed_url, file, mimeType, (pct) => {
         updateItem(item.id, { progress: pct })
       })
 
-      // Step 3 — confirm
+      // Step 4 — confirm
       const confirmRes = await fetchWithTimeout('/api/upload-media/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

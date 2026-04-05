@@ -28,6 +28,9 @@ export interface TripMedia {
   duration_sec: number | null
   caption: string | null
   taken_at: string
+  latitude: number | null
+  longitude: number | null
+  location_name: string | null
   status: 'pending' | 'ready' | 'deleted'
   created_at: string
   reactions?: MediaReaction[]
@@ -100,7 +103,7 @@ export async function getTripMedia(
     .select('*', { count: 'exact' })
     .eq('trip_id', tripId)
     .eq('status', 'ready')
-    .order('taken_at', { ascending: false })
+    .order('taken_at', { ascending: true })
     .range(from, to)
 
   if (uploader)   query = query.eq('uploader', uploader)

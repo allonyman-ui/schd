@@ -201,6 +201,12 @@ export default function TripGalleryPage() {
           viewerName={viewerName}
           onClose={() => setLightboxIndex(null)}
           onReactionChange={handleReactionChange}
+          onDelete={(mediaId) => {
+            setItems(prev => prev.filter(it => it.id !== mediaId))
+            setTotal(prev => prev - 1)
+            // If deleted last item, close lightbox
+            if (items.length <= 1) setLightboxIndex(null)
+          }}
         />
       )}
     </div>

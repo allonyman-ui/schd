@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
       trip_id, trip_slug, uploader,
       filename, content_type, file_size,
       taken_at, caption, width, height,
+      latitude, longitude, location_name,
     } = body
 
     if (!trip_id || !uploader || !filename) {
@@ -55,17 +56,20 @@ export async function POST(request: NextRequest) {
     const media = await insertTripMedia({
       trip_id,
       uploader,
-      storage_path: path,
-      public_url:   publicUrl,
-      media_type:   mediaType,
-      mime_type:    mimeType,
-      file_size:    file_size ?? null,
-      width:        width  ?? null,
-      height:       height ?? null,
-      duration_sec: null,
-      caption:      caption   ?? null,
-      taken_at:     taken_at  ?? new Date().toISOString(),
-      status:       'pending',
+      storage_path:  path,
+      public_url:    publicUrl,
+      media_type:    mediaType,
+      mime_type:     mimeType,
+      file_size:     file_size     ?? null,
+      width:         width         ?? null,
+      height:        height        ?? null,
+      duration_sec:  null,
+      caption:       caption       ?? null,
+      taken_at:      taken_at      ?? new Date().toISOString(),
+      latitude:      latitude      ?? null,
+      longitude:     longitude     ?? null,
+      location_name: location_name ?? null,
+      status:        'pending',
     })
 
     return NextResponse.json({

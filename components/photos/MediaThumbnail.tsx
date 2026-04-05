@@ -58,17 +58,28 @@ export default function MediaThumbnail({ media, onClick }: Props) {
         </div>
       )}
 
-      {/* Hover overlay with uploader */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none" />
-      <div className="absolute bottom-0 left-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
-        {member && (
-          <span
-            className="text-xs font-bold px-2 py-0.5 rounded-full"
-            style={{ background: 'rgba(0,0,0,0.5)', color: '#fff' }}
-          >
-            {member.hebrewName}
+      {/* Gradient + hover info */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none" />
+      <div className="absolute bottom-0 left-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none flex flex-col gap-0.5">
+        {/* Location */}
+        {media.location_name && (
+          <span className="text-white/90 text-[10px] leading-tight flex items-center gap-1">
+            <span>📍</span><span className="truncate">{media.location_name}</span>
           </span>
         )}
+        {/* Date + uploader row */}
+        <div className="flex items-center gap-1.5">
+          {media.taken_at && (
+            <span className="text-white/70 text-[10px]">
+              {new Date(media.taken_at).toLocaleDateString('he-IL', { day: 'numeric', month: 'short' })}
+            </span>
+          )}
+          {member && (
+            <span className="text-xs font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(0,0,0,0.5)', color: '#fff' }}>
+              {member.hebrewName}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Video duration badge */}
