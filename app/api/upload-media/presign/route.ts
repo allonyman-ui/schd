@@ -33,9 +33,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'trip_id, uploader, filename required' }, { status: 400 })
     }
 
-    // ── Duplicate check by hash ───────────────────────────────────────
+    // ── Duplicate check: hash first, then size+time fallback ─────────
     if (file_hash) {
-      const existing = await findByHash(trip_id, file_hash)
+      const existing = await findByHash(trip_id, file_hash, file_size, taken_at)
       if (existing) {
         // File already exists — tell the client to skip it
         return NextResponse.json({

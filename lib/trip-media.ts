@@ -115,46 +115,83 @@ export async function getTripMedia(
   return { items: data ?? [], total: count ?? 0 }
 }
 
-// Check if a file with this hash already exists in the trip (ready status)
-export async function findByHash(tripId: string, fileHash: string): Promise<TripMedia | null> {
+// Check if a file already exists in the trip.
+// Checks by hash first (exact), then falls back to size+taken_at (catches old rows without hash).
+export async function findByHash(
+  tripId: string,
+  fileHash: string,
+  fileSize?: number,
+  takenAt?: string
+): Promise<TripMedia | null> {
   const supabase = createServiceClient()
-  const { data } = await supabase
+
+  // 1. Exact hash match
+  const { data: byHash } = await supabase
     .from('trip_media')
     .select('*')
     .eq('trip_id', tripId)
     .eq('file_hash', fileHash)
     .eq('status', 'ready')
     .limit(1)
-    .single()
-  return data ?? null
+    .maybeSingle()
+  if (byHash) return byHash
+
+  // 2. Size + second-precision timestamp (catches rows uploaded before hash system)
+  if (fileSize && takenAt) {
+    const ts = new Date(takenAt).toISOString().slice(0, 19) // YYYY-MM-DDTHH:MM:SS
+    const { data: byMeta } = await supabase
+      .from('trip_media')
+      .select('*')
+      .eq('trip_id', tripId)
+      .eq('file_size', fileSize)
+      .eq('status', 'ready')
+      .like('taken_at', `${ts}%`)
+      .limit(1)
+      .maybeSingle()
+    if (byMeta) return byMeta
+  }
+
+  return null
 }
 
-// Scan a trip and soft-delete all duplicate rows (keeps earliest per hash)
-// Returns number of rows removed
+// Scan a trip and soft-delete all duplicate rows.
+// Strategy (in priority order):
+//   1. file_hash match  — exact content, 100% reliable
+//   2. file_size + taken_at (truncated to second) — catches old rows without hash
+// Keeps earliest created_at in each group. Returns number of rows removed.
 export async function dedupTrip(tripId: string): Promise<number> {
   const supabase = createServiceClient()
 
-  // Find all hashes that have more than one ready row
   const { data: allRows } = await supabase
     .from('trip_media')
-    .select('id, file_hash, created_at')
+    .select('id, file_hash, file_size, taken_at, created_at')
     .eq('trip_id', tripId)
     .eq('status', 'ready')
-    .not('file_hash', 'is', null)
     .order('created_at', { ascending: true })
 
   if (!allRows || allRows.length === 0) return 0
 
-  // Group by hash, keep first (earliest), collect rest for deletion
-  const seen = new Map<string, boolean>()
+  const seen = new Map<string, string>()   // key → first id
   const toDelete: string[] = []
 
   for (const row of allRows) {
-    const hash = row.file_hash as string
-    if (seen.has(hash)) {
+    let key: string | null = null
+
+    if (row.file_hash) {
+      // Priority 1: exact content hash
+      key = `h::${row.file_hash}`
+    } else if (row.file_size && row.taken_at) {
+      // Priority 2: size + second-precision timestamp
+      const ts = new Date(row.taken_at).toISOString().slice(0, 19)
+      key = `m::${row.file_size}::${ts}`
+    }
+
+    if (!key) continue
+
+    if (seen.has(key)) {
       toDelete.push(row.id)
     } else {
-      seen.set(hash, true)
+      seen.set(key, row.id)
     }
   }
 
