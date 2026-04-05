@@ -18,6 +18,10 @@ export default function MediaThumbnail({ media, onClick }: Props) {
     ? getThumbnailUrl(media.public_url, 600)
     : null
 
+  const timeStr = media.taken_at
+    ? new Date(media.taken_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
+    : null
+
   return (
     <div
       onClick={onClick}
@@ -58,24 +62,24 @@ export default function MediaThumbnail({ media, onClick }: Props) {
         </div>
       )}
 
-      {/* Gradient + hover info */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none" />
-      <div className="absolute bottom-0 left-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none flex flex-col gap-0.5">
+      {/* Always-visible bottom gradient with info */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent pointer-events-none" />
+      <div className="absolute bottom-0 left-0 right-0 p-2 pointer-events-none flex flex-col gap-0.5">
         {/* Location */}
         {media.location_name && (
-          <span className="text-white/90 text-[10px] leading-tight flex items-center gap-1">
-            <span>📍</span><span className="truncate">{media.location_name}</span>
+          <span className="text-white/80 text-[10px] leading-tight flex items-center gap-1">
+            <span>📍</span>
+            <span className="truncate">{media.location_name}</span>
           </span>
         )}
-        {/* Date + uploader row */}
+        {/* Time + uploader */}
         <div className="flex items-center gap-1.5">
-          {media.taken_at && (
-            <span className="text-white/70 text-[10px]">
-              {new Date(media.taken_at).toLocaleDateString('he-IL', { day: 'numeric', month: 'short' })}
-            </span>
+          {timeStr && (
+            <span className="text-white/55 text-[10px]">{timeStr}</span>
           )}
           {member && (
-            <span className="text-xs font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(0,0,0,0.5)', color: '#fff' }}>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-auto"
+              style={{ background: 'rgba(0,0,0,0.5)', color: '#fff' }}>
               {member.hebrewName}
             </span>
           )}
@@ -84,7 +88,7 @@ export default function MediaThumbnail({ media, onClick }: Props) {
 
       {/* Video duration badge */}
       {media.media_type === 'video' && media.duration_sec && (
-        <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded font-mono">
+        <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded font-mono">
           {formatDuration(media.duration_sec)}
         </div>
       )}
