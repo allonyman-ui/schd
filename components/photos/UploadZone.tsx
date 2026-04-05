@@ -65,8 +65,9 @@ export default function UploadZone({ trip, onUploaded }: Props) {
   const [items, setItems]           = useState<UploadItem[]>([])
   const [isRunning, setIsRunning]   = useState(false)
   const [showErrors, setShowErrors] = useState(false)
-  const fileInputRef  = useRef<HTMLInputElement>(null)
-  const cameraInputRef= useRef<HTMLInputElement>(null)
+  // Unique IDs so multiple UploadZone instances don't clash
+  const galleryInputId = useRef(`gallery-${uid()}`)
+  const cameraInputId  = useRef(`camera-${uid()}`)
 
   // Use a ref-map so upload workers always see the latest item state
   // without stale closures. itemsRef mirrors state for reads inside async code.
@@ -225,28 +226,49 @@ export default function UploadZone({ trip, onUploaded }: Props) {
         </div>
       </div>
 
-      {/* ── File picker buttons ── */}
+      {/* ── File picker buttons ──
+           Use <label> → <input> directly — iOS Safari blocks JS .click()
+           on display:none inputs. Labels work natively on all browsers.    */}
       <div className="flex gap-3">
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="flex-1 py-4 rounded-2xl font-bold text-sm flex flex-col items-center gap-2 transition-all active:scale-95"
+        <label
+          htmlFor={galleryInputId.current}
+          className="flex-1 py-4 rounded-2xl font-bold text-sm flex flex-col items-center gap-2 transition-all active:scale-95 cursor-pointer select-none"
           style={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }}
         >
           <span className="text-2xl">🖼️</span>
           <span>גלריה</span>
-        </button>
-        <button
-          onClick={() => cameraInputRef.current?.click()}
-          className="flex-1 py-4 rounded-2xl font-bold text-sm flex flex-col items-center gap-2 transition-all active:scale-95"
+        </label>
+        <label
+          htmlFor={cameraInputId.current}
+          className="flex-1 py-4 rounded-2xl font-bold text-sm flex flex-col items-center gap-2 transition-all active:scale-95 cursor-pointer select-none"
           style={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }}
         >
           <span className="text-2xl">📷</span>
           <span>מצלמה</span>
-        </button>
+        </label>
       </div>
 
-      <input ref={fileInputRef}   type="file" accept="image/*,video/*" multiple className="hidden" onChange={e => addFiles(e.target.files)} />
-      <input ref={cameraInputRef} type="file" accept="image/*,video/*" capture="environment" className="hidden" onChange={e => addFiles(e.target.files)} />
+      {/* Inputs: visually hidden but NOT display:none — iOS requires this */}
+      <input
+        id={galleryInputId.current}
+        type="file"
+        accept="image/*,video/*"
+        multiple
+        onChange={e => { addFiles(e.target.files); e.target.value = '' }}
+        style={{ position: 'absolute', opacity: 0, width: 1, height: 1, overflow: 'hidden' }}
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+      <input
+        id={cameraInputId.current}
+        type="file"
+        accept="image/*,video/*"
+        capture="environment"
+        onChange={e => { addFiles(e.target.files); e.target.value = '' }}
+        style={{ position: 'absolute', opacity: 0, width: 1, height: 1, overflow: 'hidden' }}
+        tabIndex={-1}
+        aria-hidden="true"
+      />
 
       {/* ── Queue summary ── */}
       {total > 0 && (
