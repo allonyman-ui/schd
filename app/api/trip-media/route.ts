@@ -6,16 +6,17 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const tripId = searchParams.get('trip_id')
-    const uploader = searchParams.get('uploader') ?? undefined
-    const page = parseInt(searchParams.get('page') ?? '1', 10)
-    const pageSize = parseInt(searchParams.get('pageSize') ?? '30', 10)
+    const tripId    = searchParams.get('trip_id')
+    const uploader  = searchParams.get('uploader')  ?? undefined
+    const mediaType = searchParams.get('media_type') as 'photo' | 'video' | undefined ?? undefined
+    const page      = parseInt(searchParams.get('page')     ?? '1',  10)
+    const pageSize  = parseInt(searchParams.get('pageSize') ?? '30', 10)
 
     if (!tripId) {
       return NextResponse.json({ error: 'trip_id required' }, { status: 400 })
     }
 
-    const { items, total } = await getTripMedia(tripId, { uploader, page, pageSize })
+    const { items, total } = await getTripMedia(tripId, { uploader, mediaType, page, pageSize })
 
     // Attach reactions
     const mediaIds = items.map(m => m.id)

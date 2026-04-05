@@ -88,10 +88,10 @@ export async function updateTripCover(tripId: string, coverUrl: string): Promise
 
 export async function getTripMedia(
   tripId: string,
-  opts: { uploader?: string; page?: number; pageSize?: number } = {}
+  opts: { uploader?: string; mediaType?: 'photo' | 'video'; page?: number; pageSize?: number } = {}
 ): Promise<{ items: TripMedia[]; total: number }> {
   const supabase = createServiceClient()
-  const { uploader, page = 1, pageSize = 30 } = opts
+  const { uploader, mediaType, page = 1, pageSize = 30 } = opts
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
 
@@ -103,7 +103,8 @@ export async function getTripMedia(
     .order('taken_at', { ascending: false })
     .range(from, to)
 
-  if (uploader) query = query.eq('uploader', uploader)
+  if (uploader)   query = query.eq('uploader', uploader)
+  if (mediaType)  query = query.eq('media_type', mediaType)
 
   const { data, error, count } = await query
   if (error) throw error

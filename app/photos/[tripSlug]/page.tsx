@@ -21,6 +21,7 @@ export default function TripGalleryPage() {
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [uploader, setUploader] = useState<string | null>(null)
+  const [mediaType, setMediaType] = useState<'all' | 'photo' | 'video'>('all')
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [viewerName, setViewerName] = useState<string | null>(null)
   const [showNamePicker, setShowNamePicker] = useState(false)
@@ -32,19 +33,15 @@ export default function TripGalleryPage() {
       .then((trips: Trip[]) => setTrip(trips.find(t => t.slug === tripSlug) ?? null))
   }, [tripSlug])
 
-  // Load media (reset when uploader changes)
+  // Load media (reset when uploader or mediaType changes)
   useEffect(() => {
     setLoading(true)
     setPage(1)
     setItems([])
-    loadPage(1, uploader)
-  }, [tripSlug, uploader])
+    loadPage(1, uploader, mediaType)
+  }, [tripSlug, uploader, mediaType])
 
-  async function loadPage(p: number, filterUploader: string | null) {
-    if (!trip && p === 1) {
-      // Trip not loaded yet — wait
-    }
-    // Get trip ID from slug via separate fetch
+  async function loadPage(p: number, filterUploader: string | null, filterMediaType: 'all' | 'photo' | 'video') {
     const tripsRes = await fetch('/api/trips')
     const trips: Trip[] = await tripsRes.json()
     const foundTrip = trips.find(t => t.slug === tripSlug)
@@ -57,6 +54,7 @@ export default function TripGalleryPage() {
       pageSize: String(PAGE_SIZE),
     })
     if (filterUploader) params.set('uploader', filterUploader)
+    if (filterMediaType !== 'all') params.set('media_type', filterMediaType)
 
     const res = await fetch(`/api/trip-media?${params}`)
     const data = await res.json()
@@ -72,8 +70,8 @@ export default function TripGalleryPage() {
     setLoadingMore(true)
     const nextPage = page + 1
     setPage(nextPage)
-    loadPage(nextPage, uploader)
-  }, [page, uploader, loadingMore, tripSlug])
+    loadPage(nextPage, uploader, mediaType)
+  }, [page, uploader, mediaType, loadingMore, tripSlug])
 
   function handleReactionChange(mediaId: string, emoji: string) {
     // Optimistically toggle reaction
@@ -107,7 +105,9 @@ export default function TripGalleryPage() {
           </button>
           <div className="flex-1 min-w-0">
             <h1 className="text-white font-black text-lg truncate">{trip?.title ?? '...'}</h1>
-            <p className="text-white/40 text-xs">{total} פריטים</p>
+            <p className="text-white/40 text-xs">
+              {total} {mediaType === 'photo' ? 'תמונות' : mediaType === 'video' ? 'סרטונים' : 'פריטים'}
+            </p>
           </div>
           {/* Viewer name + upload button */}
           <div className="flex items-center gap-2 shrink-0">
@@ -149,8 +149,31 @@ export default function TripGalleryPage() {
           </div>
         )}
 
-        {/* Filter bar */}
+        {/* Person filter bar */}
         <PersonFilterBar selected={uploader} onChange={setUploader} />
+
+        {/* Media type tabs */}
+        <div className="flex gap-1.5 mt-2">
+          {([
+            { key: 'all',   label: 'הכל',     icon: '📁' },
+            { key: 'photo', label: 'תמונות',  icon: '🖼️' },
+            { key: 'video', label: 'וידאו',    icon: '🎬' },
+          ] as const).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setMediaType(tab.key)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
+              style={
+                mediaType === tab.key
+                  ? { background: '#fff', color: '#0a0a0a' }
+                  : { background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)' }
+              }
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Grid */}

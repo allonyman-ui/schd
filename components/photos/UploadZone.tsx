@@ -65,28 +65,47 @@ export default function UploadZone({ trip, onUploaded }: Props) {
   const [items, setItems]           = useState<UploadItem[]>([])
   const [isRunning, setIsRunning]   = useState(false)
   const [showErrors, setShowErrors] = useState(false)
+  const [dupCount, setDupCount]     = useState(0)
   // Unique IDs so multiple UploadZone instances don't clash
   const galleryInputId = useRef(`gallery-${uid()}`)
   const cameraInputId  = useRef(`camera-${uid()}`)
 
   // Use a ref-map so upload workers always see the latest item state
   // without stale closures. itemsRef mirrors state for reads inside async code.
-  const itemsRef = useRef<Map<string, UploadItem>>(new Map())
+  const itemsRef      = useRef<Map<string, UploadItem>>(new Map())
+  // Fingerprint set for duplicate detection: "name:size:lastModified"
+  const fingerprintRef = useRef<Set<string>>(new Set())
 
   function updateItem(id: string, patch: Partial<UploadItem>) {
     itemsRef.current.set(id, { ...itemsRef.current.get(id)!, ...patch })
     setItems(Array.from(itemsRef.current.values()))
   }
 
-  // ── Add files ────────────────────────────────────────────────────
+  // ── Fingerprint a file for dedup ──────────────────────────────────
+  function fingerprint(file: File): string {
+    return `${file.name}:${file.size}:${file.lastModified}`
+  }
+
+  // ── Add files (with auto-dedup) ───────────────────────────────────
   function addFiles(files: FileList | null) {
     if (!files || !files.length) return
-    const newItems: UploadItem[] = Array.from(files).map(file => ({
-      id: uid(),
-      file,
-      status: 'pending',
-      progress: 0,
-    }))
+    let skipped = 0
+    const newItems: UploadItem[] = []
+
+    Array.from(files).forEach(file => {
+      const fp = fingerprint(file)
+      if (fingerprintRef.current.has(fp)) {
+        skipped++
+        return
+      }
+      fingerprintRef.current.add(fp)
+      newItems.push({ id: uid(), file, status: 'pending', progress: 0 })
+    })
+
+    if (skipped > 0) {
+      setDupCount(prev => prev + skipped)
+    }
+
     newItems.forEach(it => itemsRef.current.set(it.id, it))
     setItems(Array.from(itemsRef.current.values()))
   }
@@ -175,13 +194,18 @@ export default function UploadZone({ trip, onUploaded }: Props) {
 
   // ── Remove a pending item ─────────────────────────────────────────
   function removeItem(id: string) {
+    const it = itemsRef.current.get(id)
+    if (it) fingerprintRef.current.delete(fingerprint(it.file))
     itemsRef.current.delete(id)
     setItems(Array.from(itemsRef.current.values()))
   }
 
   function clearDone() {
     Array.from(itemsRef.current.entries()).forEach(([id, it]) => {
-      if (it.status === 'done') itemsRef.current.delete(id)
+      if (it.status === 'done') {
+        fingerprintRef.current.delete(fingerprint(it.file))
+        itemsRef.current.delete(id)
+      }
     })
     setItems(Array.from(itemsRef.current.values()))
   }
@@ -269,6 +293,15 @@ export default function UploadZone({ trip, onUploaded }: Props) {
         tabIndex={-1}
         aria-hidden="true"
       />
+
+      {/* ── Duplicate notice ── */}
+      {dupCount > 0 && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs" style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }}>
+          <span>⚠️</span>
+          <span>{dupCount} קובץ כפול זוהה והוסר אוטומטית</span>
+          <button onClick={() => setDupCount(0)} className="mr-auto opacity-60 hover:opacity-100">✕</button>
+        </div>
+      )}
 
       {/* ── Queue summary ── */}
       {total > 0 && (
