@@ -5,13 +5,15 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   const full = request.nextUrl.searchParams.get('full') === 'true'
   try {
+    const lat = request.nextUrl.searchParams.get('lat') || '31.9964'
+    const lon = request.nextUrl.searchParams.get('lon') || '34.8792'
     const url = new URL('https://api.open-meteo.com/v1/forecast');
-    url.searchParams.set('latitude', '31.9964');
-    url.searchParams.set('longitude', '34.8792');
+    url.searchParams.set('latitude', lat);
+    url.searchParams.set('longitude', lon);
     url.searchParams.set('hourly', 'temperature_2m,precipitation_probability,weathercode,windspeed_10m,relativehumidity_2m');
     url.searchParams.set('daily', 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode,sunrise,sunset');
     url.searchParams.set('timezone', 'Asia/Jerusalem');
-    url.searchParams.set('forecast_days', full ? '3' : '2');
+    url.searchParams.set('forecast_days', full ? '5' : '5');
 
     const res = await fetch(url.toString());
 
@@ -87,14 +89,21 @@ export async function GET(request: NextRequest) {
       sunset: dailySunset[1] ? dailySunset[1].slice(11, 16) : null,
     };
 
-    const dayAfter = full && dailyMin[2] !== undefined ? {
+    const dayAfter = dailyMin[2] !== undefined ? {
       min: dailyMin[2], max: dailyMax[2],
       rain: dailyRain[2], code: dailyCode[2],
       sunrise: dailySunrise[2] ? dailySunrise[2].slice(11, 16) : null,
       sunset: dailySunset[2] ? dailySunset[2].slice(11, 16) : null,
     } : null
 
-    return NextResponse.json({ current, hourly, today, tomorrow, ...(dayAfter ? { dayAfter } : {}) });
+    // 5-day forecast array (for extended views like Athens page)
+    const forecast5 = Array.from({ length: 5 }, (_, i) => {
+      if (dailyMin[i] === undefined) return null
+      const dateStr = data.daily.time?.[i] || ''
+      return { date: dateStr, min: dailyMin[i], max: dailyMax[i], rain: dailyRain[i], code: dailyCode[i] }
+    }).filter(Boolean)
+
+    return NextResponse.json({ current, hourly, today, tomorrow, ...(dayAfter ? { dayAfter } : {}), forecast5 });
   } catch {
     return NextResponse.json({ error: 'failed' }, { status: 500 });
   }
