@@ -143,39 +143,66 @@ export default function UploadZone({ trip, onUploaded }: Props) {
       // Step 1 — compute file hash (for server-side dedup)
       const fileHash = await hashFile(file)
 
-      // Step 2 — extract EXIF metadata (photos only)
+      // Step 2 — extract metadata (photos + videos via exifr)
       let takenAt: string | undefined
       let latitude: number | undefined
       let longitude: number | undefined
       let locationName: string | undefined
 
-      if (mimeType.startsWith('image/')) {
-        try {
-          const exifr = (await import('exifr')).default
-          const exif = await exifr.parse(file, {
-            pick: ['DateTimeOriginal', 'CreateDate', 'GPSLatitude', 'GPSLongitude'],
-            reviveValues: true,
-          })
-          if (exif?.DateTimeOriginal || exif?.CreateDate) {
-            takenAt = (exif.DateTimeOriginal ?? exif.CreateDate).toISOString()
+      try {
+        const exifr = (await import('exifr')).default
+
+        // Parse ALL segments — covers EXIF, IPTC, XMP, GPS, QuickTime (video)
+        // reviveValues:true → GPS decimal degrees, dates as Date objects
+        const exif = await exifr.parse(file, {
+          tiff: true, xmp: true, icc: false, iptc: true,
+          // QuickTime tags for .mov/.mp4
+          // exifr reads these automatically when it detects video
+          reviveValues: true,
+          translateValues: true,
+          mergeOutput: true,    // flat object with all tags merged
+        })
+
+        if (exif) {
+          // ── Date: try every known tag in priority order ──────────────
+          const dateCandidates = [
+            exif.DateTimeOriginal,   // EXIF — actual shutter press time (best)
+            exif.CreateDate,         // EXIF / QuickTime — file creation date
+            exif.DateTime,           // EXIF — last modified (fallback)
+            exif.DateCreated,        // IPTC
+            exif.TrackCreateDate,    // QuickTime video track
+            exif.MediaCreateDate,    // QuickTime media track
+          ]
+          for (const d of dateCandidates) {
+            if (d instanceof Date && !isNaN(d.getTime())) {
+              takenAt = d.toISOString()
+              break
+            }
           }
-          if (exif?.GPSLatitude != null && exif?.GPSLongitude != null) {
-            latitude  = exif.GPSLatitude
-            longitude = exif.GPSLongitude
+
+          // ── GPS: decimal degrees after reviveValues ──────────────────
+          // exifr normalises GPSLatitudeRef/LongitudeRef automatically
+          const lat = exif.latitude  ?? exif.GPSLatitude
+          const lon = exif.longitude ?? exif.GPSLongitude
+          if (lat != null && lon != null && !isNaN(lat) && !isNaN(lon)) {
+            latitude  = lat
+            longitude = lon
+
+            // Reverse geocode via OpenStreetMap Nominatim (free, no key)
             try {
               const geo = await fetch(
-                `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=he`,
+                `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=he`,
                 { headers: { 'User-Agent': 'allony-family-app/1.0' } }
               )
               if (geo.ok) {
                 const geoData = await geo.json()
                 const a = geoData.address ?? {}
-                locationName = a.city ?? a.town ?? a.village ?? a.county ?? a.country ?? undefined
+                locationName = a.city ?? a.town ?? a.village ?? a.suburb ?? a.county ?? a.country ?? undefined
               }
             } catch { /* geocoding optional */ }
           }
-        } catch { /* EXIF optional */ }
-      }
+        }
+      } catch { /* EXIF/metadata optional — never block the upload */ }
 
       // Step 3 — presign (server checks hash → returns duplicate:true if exists)
       const presignRes = await fetchWithTimeout('/api/upload-media/presign', {
