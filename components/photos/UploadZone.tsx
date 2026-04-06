@@ -368,7 +368,7 @@ export default function UploadZone({ trip, onUploaded }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ trip_id: trip.id }),
       })
-      if (r.ok) removedFromDb = (await r.json()).removed ?? 0
+      if (r.ok) { const d = await r.json(); removedFromDb = d.removed ?? 0 }
     } catch { /* best-effort */ }
 
     setIsRunning(false)

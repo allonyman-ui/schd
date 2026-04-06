@@ -116,7 +116,7 @@ export async function getTripMedia(
 }
 
 // Check if a file already exists in the trip.
-// Checks by hash first (exact), then falls back to size+taken_at (catches old rows without hash).
+// Checks by hash first (exact), then several fallbacks for old rows without hashes.
 export async function findByHash(
   tripId: string,
   fileHash: string,
@@ -125,18 +125,19 @@ export async function findByHash(
 ): Promise<TripMedia | null> {
   const supabase = createServiceClient()
 
-  // 1. Exact hash match
+  // 1. Exact hash match — check both ready AND pending (prevents race-condition dupes
+  //    where 6 workers all pass the check before any confirms as 'ready')
   const { data: byHash } = await supabase
     .from('trip_media')
     .select('*')
     .eq('trip_id', tripId)
     .eq('file_hash', fileHash)
-    .eq('status', 'ready')
+    .in('status', ['ready', 'pending'])
     .limit(1)
     .maybeSingle()
   if (byHash) return byHash
 
-  // 2. Size + second-precision timestamp (catches rows uploaded before hash system)
+  // 2. Size + second-precision timestamp (catches rows without hash but with real EXIF time)
   if (fileSize && takenAt) {
     const ts = new Date(takenAt).toISOString().slice(0, 19) // YYYY-MM-DDTHH:MM:SS
     const { data: byMeta } = await supabase
@@ -144,66 +145,100 @@ export async function findByHash(
       .select('*')
       .eq('trip_id', tripId)
       .eq('file_size', fileSize)
-      .eq('status', 'ready')
+      .in('status', ['ready', 'pending'])
       .like('taken_at', `${ts}%`)
       .limit(1)
       .maybeSingle()
     if (byMeta) return byMeta
   }
 
+  // 3. Size alone, same day — catches old rows where taken_at was stored as upload time
+  //    but a re-upload now has the real EXIF time (different second, same file size)
+  if (fileSize && fileSize > 50_000 && takenAt) {
+    const day = takenAt.slice(0, 10) // YYYY-MM-DD
+    const { data: bySize } = await supabase
+      .from('trip_media')
+      .select('*')
+      .eq('trip_id', tripId)
+      .eq('file_size', fileSize)
+      .in('status', ['ready', 'pending'])
+      .like('taken_at', `${day}%`)
+      .limit(1)
+      .maybeSingle()
+    if (bySize) return bySize
+  }
+
   return null
 }
 
 // Scan a trip and soft-delete all duplicate rows.
-// Strategy (in priority order):
-//   1. file_hash match  — exact content, 100% reliable
-//   2. file_size + taken_at (truncated to second) — catches old rows without hash
-// Keeps earliest created_at in each group. Returns number of rows removed.
-export async function dedupTrip(tripId: string): Promise<number> {
+// Matching strategy (applied in priority order, most to least precise):
+//   1. file_hash          — exact content hash, 100% reliable
+//   2. file_size + taken_at (second precision) — old rows without hash, same timestamp
+//   3. file_size + taken_at (day precision)    — same file re-uploaded with different time metadata
+// Keeps the earliest created_at in each group. Returns { removed, scanned }.
+export async function dedupTrip(tripId: string): Promise<{ removed: number; scanned: number }> {
   const supabase = createServiceClient()
 
+  // Include 'pending' rows so concurrent uploads are caught too
   const { data: allRows } = await supabase
     .from('trip_media')
-    .select('id, file_hash, file_size, taken_at, created_at')
+    .select('id, file_hash, file_size, taken_at, created_at, uploader')
     .eq('trip_id', tripId)
-    .eq('status', 'ready')
+    .in('status', ['ready', 'pending'])
     .order('created_at', { ascending: true })
 
-  if (!allRows || allRows.length === 0) return 0
+  if (!allRows || allRows.length === 0) return { removed: 0, scanned: 0 }
 
-  const seen = new Map<string, string>()   // key → first id
+  const seen    = new Map<string, string>()  // key → id of the canonical copy
   const toDelete: string[] = []
 
   for (const row of allRows) {
-    let key: string | null = null
+    const keys: string[] = []
 
     if (row.file_hash) {
-      // Priority 1: exact content hash
-      key = `h::${row.file_hash}`
-    } else if (row.file_size && row.taken_at) {
-      // Priority 2: size + second-precision timestamp
-      const ts = new Date(row.taken_at).toISOString().slice(0, 19)
-      key = `m::${row.file_size}::${ts}`
+      // Strategy 1: exact hash (most reliable)
+      keys.push(`h::${row.file_hash}`)
     }
 
-    if (!key) continue
+    if (row.file_size && row.taken_at) {
+      // Strategy 2: size + second-precision timestamp
+      const ts = new Date(row.taken_at).toISOString().slice(0, 19)
+      keys.push(`s::${row.file_size}::${ts}`)
 
-    if (seen.has(key)) {
+      // Strategy 3: size + day (catches re-uploads with different EXIF/upload time)
+      // Only for files > 50 KB to avoid false-positives on tiny thumbnails
+      if (row.file_size > 50_000) {
+        const day = row.taken_at.slice(0, 10)
+        keys.push(`d::${row.file_size}::${day}`)
+      }
+    }
+
+    if (keys.length === 0) continue
+
+    // Check if ANY key was seen before (= duplicate)
+    const seenKey = keys.find(k => seen.has(k))
+    if (seenKey) {
       toDelete.push(row.id)
     } else {
-      seen.set(key, row.id)
+      // Register all keys for this canonical row
+      keys.forEach(k => seen.set(k, row.id))
     }
   }
 
-  if (toDelete.length === 0) return 0
+  if (toDelete.length === 0) return { removed: 0, scanned: allRows.length }
 
-  const { error } = await supabase
-    .from('trip_media')
-    .update({ status: 'deleted' })
-    .in('id', toDelete)
+  // Delete in batches of 100 to stay within Supabase limits
+  for (let i = 0; i < toDelete.length; i += 100) {
+    const batch = toDelete.slice(i, i + 100)
+    const { error } = await supabase
+      .from('trip_media')
+      .update({ status: 'deleted' })
+      .in('id', batch)
+    if (error) throw error
+  }
 
-  if (error) throw error
-  return toDelete.length
+  return { removed: toDelete.length, scanned: allRows.length }
 }
 
 export async function insertTripMedia(
