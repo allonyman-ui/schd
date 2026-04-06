@@ -117,6 +117,10 @@ export async function getTripMedia(
 
 // Check if a file already exists in the trip.
 // Checks by hash first (exact), then several fallbacks for old rows without hashes.
+//
+// For 'pending' rows we only consider RECENT ones (< 5 min old) — older pending
+// rows are orphans from failed/timed-out uploads and should be ignored so the
+// user can re-attempt uploading the same file.
 export async function findByHash(
   tripId: string,
   fileHash: string,
@@ -125,43 +129,57 @@ export async function findByHash(
 ): Promise<TripMedia | null> {
   const supabase = createServiceClient()
 
-  // 1. Exact hash match — check both ready AND pending (prevents race-condition dupes
-  //    where 6 workers all pass the check before any confirms as 'ready')
-  const { data: byHash } = await supabase
+  // Cutoff: pending rows older than this are orphans (upload failed), ignore them
+  const orphanCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+
+  // 1. Exact hash — ready rows (definitive)
+  const { data: byHashReady } = await supabase
     .from('trip_media')
     .select('*')
     .eq('trip_id', tripId)
     .eq('file_hash', fileHash)
-    .in('status', ['ready', 'pending'])
+    .eq('status', 'ready')
     .limit(1)
     .maybeSingle()
-  if (byHash) return byHash
+  if (byHashReady) return byHashReady
 
-  // 2. Size + second-precision timestamp (catches rows without hash but with real EXIF time)
+  // 2. Exact hash — recent pending rows (in-progress concurrent upload)
+  const { data: byHashPending } = await supabase
+    .from('trip_media')
+    .select('*')
+    .eq('trip_id', tripId)
+    .eq('file_hash', fileHash)
+    .eq('status', 'pending')
+    .gte('created_at', orphanCutoff)   // only fresh pending rows
+    .limit(1)
+    .maybeSingle()
+  if (byHashPending) return byHashPending
+
+  // 3. Size + second-precision timestamp (catches rows without hash)
   if (fileSize && takenAt) {
-    const ts = new Date(takenAt).toISOString().slice(0, 19) // YYYY-MM-DDTHH:MM:SS
+    const ts = new Date(takenAt).toISOString().slice(0, 19)
     const { data: byMeta } = await supabase
       .from('trip_media')
       .select('*')
       .eq('trip_id', tripId)
       .eq('file_size', fileSize)
-      .in('status', ['ready', 'pending'])
+      .eq('status', 'ready')
       .like('taken_at', `${ts}%`)
       .limit(1)
       .maybeSingle()
     if (byMeta) return byMeta
   }
 
-  // 3. Size alone, same day — catches old rows where taken_at was stored as upload time
-  //    but a re-upload now has the real EXIF time (different second, same file size)
+  // 4. Size alone, same day — catches re-uploads where taken_at changed
+  //    (old rows stored upload time; new upload has real EXIF capture time)
   if (fileSize && fileSize > 50_000 && takenAt) {
-    const day = takenAt.slice(0, 10) // YYYY-MM-DD
+    const day = takenAt.slice(0, 10)
     const { data: bySize } = await supabase
       .from('trip_media')
       .select('*')
       .eq('trip_id', tripId)
       .eq('file_size', fileSize)
-      .in('status', ['ready', 'pending'])
+      .eq('status', 'ready')
       .like('taken_at', `${day}%`)
       .limit(1)
       .maybeSingle()
@@ -239,6 +257,23 @@ export async function dedupTrip(tripId: string): Promise<{ removed: number; scan
   }
 
   return { removed: toDelete.length, scanned: allRows.length }
+}
+
+// Clean up pending rows older than 10 minutes for a trip.
+// These are orphans from uploads that failed / timed out / browser closed.
+// They block legitimate re-uploads of the same files.
+// Safe to call fire-and-forget — never throws.
+export async function cleanOrphanedPending(tripId: string): Promise<void> {
+  try {
+    const supabase = createServiceClient()
+    const cutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+    await supabase
+      .from('trip_media')
+      .update({ status: 'deleted' })
+      .eq('trip_id', tripId)
+      .eq('status', 'pending')
+      .lt('created_at', cutoff)
+  } catch { /* non-blocking — ignore all errors */ }
 }
 
 export async function insertTripMedia(
