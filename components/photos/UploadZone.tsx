@@ -5,7 +5,7 @@ import type { Trip } from '@/lib/trip-media'
 import { FAMILY_MEMBERS } from '@/lib/types'
 
 // ── Types ──────────────────────────────────────────────────────────
-type ItemStatus = 'pending' | 'uploading' | 'done' | 'duplicate' | 'error'
+type ItemStatus = 'pending' | 'preparing' | 'uploading' | 'done' | 'duplicate' | 'error'
 
 interface UploadItem {
   id: string
@@ -15,14 +15,23 @@ interface UploadItem {
   error?: string
 }
 
+interface PreparedMeta {
+  fileHash: string
+  takenAt?: string
+  latitude?: number
+  longitude?: number
+  locationName?: string
+}
+
 interface Props {
   trip: Trip
   onUploaded?: () => void
 }
 
 // ── Constants ──────────────────────────────────────────────────────
-const CONCURRENCY = 3          // simultaneous uploads
-const XHR_TIMEOUT_MS = 120_000 // 2 min per file
+const CONCURRENCY_PREPARE = 4   // parallel hash+EXIF workers
+const CONCURRENCY_UPLOAD  = 6   // parallel upload workers
+const XHR_TIMEOUT_MS      = 180_000  // 3 min per file (large videos)
 
 const MEMBER_COLORS: Record<string, string> = {
   alex:  '#1d4ed8',
@@ -32,21 +41,12 @@ const MEMBER_COLORS: Record<string, string> = {
   assaf: '#b45309',
 }
 
-// Mime fallback map for common types iOS/Android strip
 const MIME_FALLBACK: Record<string, string> = {
-  jpg:  'image/jpeg',
-  jpeg: 'image/jpeg',
-  png:  'image/png',
-  gif:  'image/gif',
-  webp: 'image/webp',
-  heic: 'image/heic',
-  heif: 'image/heif',
-  mp4:  'video/mp4',
-  mov:  'video/quicktime',
-  avi:  'video/x-msvideo',
-  mkv:  'video/x-matroska',
-  webm: 'video/webm',
-  m4v:  'video/mp4',
+  jpg:  'image/jpeg', jpeg: 'image/jpeg', png:  'image/png',
+  gif:  'image/gif',  webp: 'image/webp', heic: 'image/heic',
+  heif: 'image/heif', mp4:  'video/mp4',  mov:  'video/quicktime',
+  avi:  'video/x-msvideo', mkv: 'video/x-matroska',
+  webm: 'video/webm', m4v:  'video/mp4',
 }
 
 function getMimeType(file: File): string {
@@ -59,62 +59,72 @@ function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
+function formatETA(remainingSec: number): string {
+  if (remainingSec < 60) return `${Math.round(remainingSec)}ש׳`
+  const m = Math.floor(remainingSec / 60)
+  const s = Math.round(remainingSec % 60)
+  return `${m}:${s.toString().padStart(2, '0')} דק׳`
+}
+
 // ── Component ──────────────────────────────────────────────────────
 export default function UploadZone({ trip, onUploaded }: Props) {
-  const [uploader, setUploader]     = useState<string | null>(null)
-  const [items, setItems]           = useState<UploadItem[]>([])
-  const [isRunning, setIsRunning]   = useState(false)
-  const [showErrors, setShowErrors] = useState(false)
-  const [dupCount, setDupCount]     = useState(0)          // client-side fingerprint dupes
-  const [dedupReport, setDedupReport] = useState<{       // post-upload dedup report
-    skippedByHash: number   // already in DB (hash match)
-    removedFromDb: number   // DB duplicates cleaned up
+  const [uploader, setUploader]       = useState<string | null>(null)
+  const [items, setItems]             = useState<UploadItem[]>([])
+  const [isRunning, setIsRunning]     = useState(false)
+  const [dupCount, setDupCount]       = useState(0)
+  const [startTime, setStartTime]     = useState<number | null>(null)
+  const [completedCount, setCompleted] = useState(0)
+  const [dedupReport, setDedupReport] = useState<{
+    skippedByHash: number
+    removedFromDb: number
   } | null>(null)
-  // Unique IDs so multiple UploadZone instances don't clash
+
   const galleryInputId = useRef(`gallery-${uid()}`)
   const cameraInputId  = useRef(`camera-${uid()}`)
 
-  // Use a ref-map so upload workers always see the latest item state
-  // without stale closures. itemsRef mirrors state for reads inside async code.
-  const itemsRef      = useRef<Map<string, UploadItem>>(new Map())
-  // Fingerprint set for duplicate detection: "name:size:lastModified"
+  // Ref-map: mirrors state for reads inside async closures
+  const itemsRef       = useRef<Map<string, UploadItem>>(new Map())
+  // Fingerprint dedup: "name:size:lastModified"
   const fingerprintRef = useRef<Set<string>>(new Set())
+  // Pre-computed EXIF+hash results, populated by background prepare workers
+  const preparedRef    = useRef<Map<string, PreparedMeta>>(new Map())
+  // In-progress prepare promises (by item id)
+  const preparingRef   = useRef<Map<string, Promise<void>>>(new Map())
+
+  // Geocode cache: keyed on "lat.2dec,lon.2dec" → Promise<name|null>
+  // Shared across all workers so same location is never fetched twice
+  const geocacheRef    = useRef<Map<string, Promise<string | null>>>(new Map())
 
   function updateItem(id: string, patch: Partial<UploadItem>) {
     itemsRef.current.set(id, { ...itemsRef.current.get(id)!, ...patch })
     setItems(Array.from(itemsRef.current.values()))
   }
 
-  // ── Fingerprint a file for dedup ──────────────────────────────────
   function fingerprint(file: File): string {
     return `${file.name}:${file.size}:${file.lastModified}`
   }
 
-  // ── Add files (with auto-dedup) ───────────────────────────────────
-  function addFiles(files: FileList | null) {
-    if (!files || !files.length) return
-    let skipped = 0
-    const newItems: UploadItem[] = []
-
-    Array.from(files).forEach(file => {
-      const fp = fingerprint(file)
-      if (fingerprintRef.current.has(fp)) {
-        skipped++
-        return
-      }
-      fingerprintRef.current.add(fp)
-      newItems.push({ id: uid(), file, status: 'pending', progress: 0 })
-    })
-
-    if (skipped > 0) {
-      setDupCount(prev => prev + skipped)
+  // ── Geocode with dedup cache ───────────────────────────────────────
+  function geocode(lat: number, lon: number): Promise<string | null> {
+    const key = `${lat.toFixed(2)},${lon.toFixed(2)}`
+    if (!geocacheRef.current.has(key)) {
+      geocacheRef.current.set(key, (async () => {
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=he`,
+            { headers: { 'User-Agent': 'allony-family-app/1.0' } }
+          )
+          if (!res.ok) return null
+          const d = await res.json()
+          const a = d.address ?? {}
+          return a.city ?? a.town ?? a.village ?? a.suburb ?? a.county ?? a.country ?? null
+        } catch { return null }
+      })())
     }
-
-    newItems.forEach(it => itemsRef.current.set(it.id, it))
-    setItems(Array.from(itemsRef.current.values()))
+    return geocacheRef.current.get(key)!
   }
 
-  // ── Hash a file (first+last 2MB for speed on large videos) ──────────
+  // ── Hash a file (first+last 2 MB for speed on large videos) ───────
   async function hashFile(file: File): Promise<string> {
     const CHUNK = 2 * 1024 * 1024
     let buf: ArrayBuffer
@@ -130,81 +140,140 @@ export default function UploadZone({ trip, onUploaded }: Props) {
     }
     const digest = await crypto.subtle.digest('SHA-256', buf)
     const hex = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('')
-    return `${hex}-${file.size}` // size suffix further prevents collisions
+    return `${hex}-${file.size}`
+  }
+
+  // ── Prepare one item: hash + EXIF (runs in background) ───────────
+  async function prepareOne(item: UploadItem): Promise<void> {
+    try {
+      const [fileHash, exifMeta] = await Promise.all([
+        hashFile(item.file),
+        (async () => {
+          try {
+            const exifr = (await import('exifr')).default
+            return await exifr.parse(item.file, {
+              tiff: true, xmp: true, icc: false, iptc: true,
+              reviveValues: true, translateValues: true, mergeOutput: true,
+            })
+          } catch { return null }
+        })(),
+      ])
+
+      const meta: PreparedMeta = { fileHash }
+
+      if (exifMeta) {
+        // Date candidates in priority order
+        for (const field of ['DateTimeOriginal','CreateDate','DateTime','DateCreated','TrackCreateDate','MediaCreateDate']) {
+          const v = exifMeta[field]
+          if (v instanceof Date && !isNaN(v.getTime())) { meta.takenAt = v.toISOString(); break }
+        }
+        // GPS
+        const lat = exifMeta.latitude ?? exifMeta.GPSLatitude
+        const lon = exifMeta.longitude ?? exifMeta.GPSLongitude
+        if (lat != null && lon != null && !isNaN(lat) && !isNaN(lon)) {
+          meta.latitude  = lat
+          meta.longitude = lon
+          // Kick off geocoding immediately (shared cache, won't re-fetch for same location)
+          geocode(lat, lon).then(name => {
+            if (name) {
+              const existing = preparedRef.current.get(item.id)
+              if (existing) preparedRef.current.set(item.id, { ...existing, locationName: name })
+            }
+          })
+        }
+      }
+
+      preparedRef.current.set(item.id, meta)
+    } catch {
+      // Prepare failed — uploadOne will compute inline as fallback
+    }
+  }
+
+  // ── Launch background prepare workers for new items ───────────────
+  function runPreparePool(itemIds: string[]) {
+    let pi = 0
+    async function prepWorker() {
+      while (pi < itemIds.length) {
+        const id = itemIds[pi++]
+        const item = itemsRef.current.get(id)
+        if (!item || preparedRef.current.has(id) || preparingRef.current.has(id)) continue
+        const p = prepareOne(item)
+        preparingRef.current.set(id, p)
+        await p
+      }
+    }
+    Promise.all(Array.from({ length: CONCURRENCY_PREPARE }, prepWorker))
+  }
+
+  // ── Add files ─────────────────────────────────────────────────────
+  function addFiles(files: FileList | null) {
+    if (!files || !files.length) return
+    let skipped = 0
+    const newItems: UploadItem[] = []
+
+    Array.from(files).forEach(file => {
+      const fp = fingerprint(file)
+      if (fingerprintRef.current.has(fp)) { skipped++; return }
+      fingerprintRef.current.add(fp)
+      newItems.push({ id: uid(), file, status: 'pending', progress: 0 })
+    })
+
+    if (skipped > 0) setDupCount(prev => prev + skipped)
+
+    newItems.forEach(it => itemsRef.current.set(it.id, it))
+    setItems(Array.from(itemsRef.current.values()))
+
+    // Kick off background preparation immediately
+    runPreparePool(newItems.map(it => it.id))
   }
 
   // ── Upload one file ───────────────────────────────────────────────
   async function uploadOne(item: UploadItem, uploaderName: string): Promise<'done' | 'duplicate' | 'error'> {
-    updateItem(item.id, { status: 'uploading', progress: 0 })
-    const file = item.file
+    updateItem(item.id, { status: 'uploading', progress: 5 })
+    const file     = item.file
     const mimeType = getMimeType(file)
 
     try {
-      // Step 1 — compute file hash (for server-side dedup)
-      const fileHash = await hashFile(file)
+      // Wait for background prepare if still in progress (usually already done)
+      const prepPromise = preparingRef.current.get(item.id)
+      if (prepPromise) await prepPromise
 
-      // Step 2 — extract metadata (photos + videos via exifr)
-      let takenAt: string | undefined
-      let latitude: number | undefined
-      let longitude: number | undefined
-      let locationName: string | undefined
+      // Use pre-computed data if available, else compute inline
+      let prepared = preparedRef.current.get(item.id)
+      if (!prepared) {
+        updateItem(item.id, { progress: 10 })
+        const fileHash = await hashFile(file)
+        prepared = { fileHash }
 
-      try {
-        const exifr = (await import('exifr')).default
-
-        // Parse ALL segments — covers EXIF, IPTC, XMP, GPS, QuickTime (video)
-        // reviveValues:true → GPS decimal degrees, dates as Date objects
-        const exif = await exifr.parse(file, {
-          tiff: true, xmp: true, icc: false, iptc: true,
-          // QuickTime tags for .mov/.mp4
-          // exifr reads these automatically when it detects video
-          reviveValues: true,
-          translateValues: true,
-          mergeOutput: true,    // flat object with all tags merged
-        })
-
-        if (exif) {
-          // ── Date: try every known tag in priority order ──────────────
-          const dateCandidates = [
-            exif.DateTimeOriginal,   // EXIF — actual shutter press time (best)
-            exif.CreateDate,         // EXIF / QuickTime — file creation date
-            exif.DateTime,           // EXIF — last modified (fallback)
-            exif.DateCreated,        // IPTC
-            exif.TrackCreateDate,    // QuickTime video track
-            exif.MediaCreateDate,    // QuickTime media track
-          ]
-          for (const d of dateCandidates) {
-            if (d instanceof Date && !isNaN(d.getTime())) {
-              takenAt = d.toISOString()
-              break
+        try {
+          const exifr = (await import('exifr')).default
+          const exif  = await exifr.parse(file, {
+            tiff: true, xmp: true, icc: false, iptc: true,
+            reviveValues: true, translateValues: true, mergeOutput: true,
+          })
+          if (exif) {
+            for (const f of ['DateTimeOriginal','CreateDate','DateTime','DateCreated','TrackCreateDate','MediaCreateDate']) {
+              const v = exif[f]
+              if (v instanceof Date && !isNaN(v.getTime())) { prepared.takenAt = v.toISOString(); break }
+            }
+            const lat = exif.latitude ?? exif.GPSLatitude
+            const lon = exif.longitude ?? exif.GPSLongitude
+            if (lat != null && lon != null) {
+              prepared.latitude  = lat
+              prepared.longitude = lon
+              prepared.locationName = (await geocode(lat, lon)) ?? undefined
             }
           }
+        } catch { /* metadata optional */ }
 
-          // ── GPS: decimal degrees after reviveValues ──────────────────
-          // exifr normalises GPSLatitudeRef/LongitudeRef automatically
-          const lat = exif.latitude  ?? exif.GPSLatitude
-          const lon = exif.longitude ?? exif.GPSLongitude
-          if (lat != null && lon != null && !isNaN(lat) && !isNaN(lon)) {
-            latitude  = lat
-            longitude = lon
+        preparedRef.current.set(item.id, prepared)
+      }
 
-            // Reverse geocode via OpenStreetMap Nominatim (free, no key)
-            try {
-              const geo = await fetch(
-                `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=he`,
-                { headers: { 'User-Agent': 'allony-family-app/1.0' } }
-              )
-              if (geo.ok) {
-                const geoData = await geo.json()
-                const a = geoData.address ?? {}
-                locationName = a.city ?? a.town ?? a.village ?? a.suburb ?? a.county ?? a.country ?? undefined
-              }
-            } catch { /* geocoding optional */ }
-          }
-        }
-      } catch { /* EXIF/metadata optional — never block the upload */ }
+      updateItem(item.id, { progress: 20 })
 
-      // Step 3 — presign (server checks hash → returns duplicate:true if exists)
+      const { fileHash, takenAt, latitude, longitude, locationName } = prepared
+
+      // Presign
       const presignRes = await fetchWithTimeout('/api/upload-media/presign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -229,8 +298,6 @@ export default function UploadZone({ trip, onUploaded }: Props) {
       }
 
       const presignData = await presignRes.json()
-
-      // Server says this hash already exists → skip upload
       if (presignData.duplicate) {
         updateItem(item.id, { status: 'duplicate', progress: 100 })
         return 'duplicate'
@@ -238,12 +305,12 @@ export default function UploadZone({ trip, onUploaded }: Props) {
 
       const { signed_url, media_id } = presignData
 
-      // Step 4 — PUT directly to Supabase with progress
+      // PUT directly to Supabase with live progress (20→95%)
       await xhrUpload(signed_url, file, mimeType, (pct) => {
-        updateItem(item.id, { progress: pct })
+        updateItem(item.id, { progress: 20 + Math.round(pct * 0.75) })
       })
 
-      // Step 5 — confirm
+      // Confirm
       const confirmRes = await fetchWithTimeout('/api/upload-media/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -259,81 +326,78 @@ export default function UploadZone({ trip, onUploaded }: Props) {
     }
   }
 
-  // ── Start all uploads with concurrency pool ───────────────────────
+  // ── Start all uploads ─────────────────────────────────────────────
   const startUpload = useCallback(async () => {
     if (!uploader || isRunning) return
     setIsRunning(true)
-    setShowErrors(false)
+    setCompleted(0)
     setDedupReport(null)
+    setStartTime(Date.now())
 
     const queue = Array.from(itemsRef.current.values())
       .filter(it => it.status === 'pending' || it.status === 'error')
       .map(it => it.id)
 
-    // Reset errors → pending for retry
+    // Reset errors → pending
     queue.forEach(id => {
       const it = itemsRef.current.get(id)!
       if (it.status === 'error') updateItem(id, { status: 'pending', progress: 0, error: undefined })
     })
 
-    // Counters (shared across workers via closure mutation — safe because JS is single-threaded for this)
     let skippedByHash = 0
     let qi = 0
 
     async function worker() {
       while (qi < queue.length) {
-        const id = queue[qi++]
+        const id   = queue[qi++]
         const item = itemsRef.current.get(id)
         if (!item || item.status === 'done' || item.status === 'duplicate') continue
         const result = await uploadOne(item, uploader!)
         if (result === 'duplicate') skippedByHash++
+        setCompleted(c => c + 1)
       }
     }
 
-    await Promise.all(Array.from({ length: CONCURRENCY }, worker))
+    await Promise.all(Array.from({ length: CONCURRENCY_UPLOAD }, worker))
 
-    // ── Post-batch DB dedup scan ──────────────────────────────────────
+    // Post-batch DB dedup scan
     let removedFromDb = 0
     try {
-      const dedupRes = await fetch('/api/dedup-media', {
+      const r = await fetch('/api/dedup-media', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ trip_id: trip.id }),
       })
-      if (dedupRes.ok) {
-        const d = await dedupRes.json()
-        removedFromDb = d.removed ?? 0
-      }
-    } catch { /* dedup scan is best-effort */ }
+      if (r.ok) removedFromDb = (await r.json()).removed ?? 0
+    } catch { /* best-effort */ }
 
     setIsRunning(false)
+    setStartTime(null)
 
-    // Show report if anything was deduplicated
     if (skippedByHash > 0 || removedFromDb > 0) {
       setDedupReport({ skippedByHash, removedFromDb })
     }
 
     const finalItems = Array.from(itemsRef.current.values())
-    const hasErrors = finalItems.some(it => it.status === 'error')
-    if (hasErrors) setShowErrors(true)
-
+    if (finalItems.some(it => it.status === 'error')) { /* errors visible in list */ }
     const uploaded = finalItems.filter(it => it.status === 'done').length
     if (uploaded > 0) onUploaded?.()
   }, [uploader, isRunning, trip, onUploaded])
 
-  // ── Remove a pending item ─────────────────────────────────────────
   function removeItem(id: string) {
     const it = itemsRef.current.get(id)
     if (it) fingerprintRef.current.delete(fingerprint(it.file))
     itemsRef.current.delete(id)
+    preparedRef.current.delete(id)
     setItems(Array.from(itemsRef.current.values()))
   }
 
   function clearDone() {
     Array.from(itemsRef.current.entries()).forEach(([id, it]) => {
-      if (it.status === 'done') {
+      if (it.status === 'done' || it.status === 'duplicate') {
         fingerprintRef.current.delete(fingerprint(it.file))
         itemsRef.current.delete(id)
+        preparedRef.current.delete(id)
       }
     })
     setItems(Array.from(itemsRef.current.values()))
@@ -341,20 +405,31 @@ export default function UploadZone({ trip, onUploaded }: Props) {
 
   // ── Derived stats ─────────────────────────────────────────────────
   const total      = items.length
-  const pending    = items.filter(it => it.status === 'pending').length
+  const pending    = items.filter(it => it.status === 'pending' || it.status === 'preparing').length
   const uploading  = items.filter(it => it.status === 'uploading').length
   const done       = items.filter(it => it.status === 'done').length
   const duplicates = items.filter(it => it.status === 'duplicate').length
   const errors     = items.filter(it => it.status === 'error').length
+  const finishedCount = done + duplicates
+
   const overallPct = total ? Math.round(
     items.reduce((s, it) => s + (['done','duplicate'].includes(it.status) ? 100 : it.progress), 0) / total
   ) : 0
 
-  const canUpload   = !isRunning && uploader && (pending + errors) > 0
-  const allFinished = total > 0 && (done + duplicates) === total && errors === 0
+  // ETA calculation
+  const eta = (() => {
+    if (!isRunning || !startTime || finishedCount < 2) return null
+    const elapsed = (Date.now() - startTime) / 1000
+    const rate    = finishedCount / elapsed     // files per second
+    const remain  = (total - finishedCount) / rate
+    return remain > 3 ? formatETA(remain) : null
+  })()
 
-  // Items to show: uploading + errors only (skip done/duplicate to save DOM)
-  const visibleItems = items.filter(it => it.status === 'uploading' || it.status === 'error').slice(0, 20)
+  const canUpload   = !isRunning && !!uploader && (pending + errors) > 0
+  const allFinished = total > 0 && finishedCount === total && errors === 0
+
+  // Show only active (uploading/error) items to avoid huge DOM
+  const visibleItems = items.filter(it => it.status === 'uploading' || it.status === 'error').slice(0, 12)
 
   return (
     <div className="flex flex-col gap-5">
@@ -386,19 +461,21 @@ export default function UploadZone({ trip, onUploaded }: Props) {
       <div className="flex gap-3">
         <label
           htmlFor={galleryInputId.current}
-          className="flex-1 py-4 rounded-2xl font-bold text-sm flex flex-col items-center gap-2 transition-all active:scale-95 cursor-pointer select-none"
+          className="flex-1 py-5 rounded-2xl font-bold text-sm flex flex-col items-center gap-2 transition-all active:scale-95 cursor-pointer select-none"
           style={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }}
         >
-          <span className="text-2xl">🖼️</span>
+          <span className="text-3xl">🖼️</span>
           <span>גלריה</span>
+          <span className="text-white/40 text-xs">בחר עד 200 קבצים</span>
         </label>
         <label
           htmlFor={cameraInputId.current}
-          className="flex-1 py-4 rounded-2xl font-bold text-sm flex flex-col items-center gap-2 transition-all active:scale-95 cursor-pointer select-none"
+          className="flex-1 py-5 rounded-2xl font-bold text-sm flex flex-col items-center gap-2 transition-all active:scale-95 cursor-pointer select-none"
           style={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }}
         >
-          <span className="text-2xl">📷</span>
+          <span className="text-3xl">📷</span>
           <span>מצלמה</span>
+          <span className="text-white/40 text-xs">צלם עכשיו</span>
         </label>
       </div>
 
@@ -424,6 +501,14 @@ export default function UploadZone({ trip, onUploaded }: Props) {
         aria-hidden="true"
       />
 
+      {/* ── Tips for large batches ── */}
+      {total === 0 && (
+        <div className="text-center text-white/25 text-xs leading-relaxed px-2">
+          ניתן לבחור עד 200 תמונות וסרטונים בבת אחת
+          <br />מעלה 6 קבצים במקביל • מזהה כפילויות אוטומטית
+        </div>
+      )}
+
       {/* ── Client-side fingerprint dupe notice ── */}
       {dupCount > 0 && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs" style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }}>
@@ -443,7 +528,7 @@ export default function UploadZone({ trip, onUploaded }: Props) {
           {dedupReport.skippedByHash > 0 && (
             <div className="flex items-center gap-2 text-yellow-200/80">
               <span>⏭️</span>
-              <span><strong>{dedupReport.skippedByHash}</strong> {dedupReport.skippedByHash === 1 ? 'קובץ' : 'קבצים'} כבר קיימים באלבום — לא הועלו שוב</span>
+              <span><strong>{dedupReport.skippedByHash}</strong> {dedupReport.skippedByHash === 1 ? 'קובץ' : 'קבצים'} כבר קיימים — לא הועלו שוב</span>
             </div>
           )}
           {dedupReport.removedFromDb > 0 && (
@@ -458,28 +543,37 @@ export default function UploadZone({ trip, onUploaded }: Props) {
       {/* ── Queue summary ── */}
       {total > 0 && (
         <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ background: 'rgba(255,255,255,0.06)' }}>
-          {/* Counts row */}
+          {/* Counts + ETA row */}
           <div className="flex items-center justify-between text-sm">
-            <div className="flex gap-3 text-white/60">
-              {pending + uploading > 0 && <span>⏳ {pending + uploading}</span>}
-              {done       > 0 && <span className="text-green-400">✅ {done}</span>}
-              {duplicates > 0 && <span className="text-yellow-400">⚠️ {duplicates} כפולים</span>}
-              {errors     > 0 && <span className="text-red-400">❌ {errors}</span>}
+            <div className="flex gap-3 text-white/60 flex-wrap">
+              {(pending + uploading) > 0 && <span>⏳ {pending + uploading}</span>}
+              {done        > 0 && <span className="text-green-400">✅ {done}</span>}
+              {duplicates  > 0 && <span className="text-yellow-400">⚠️ {duplicates}</span>}
+              {errors      > 0 && <span className="text-red-400">❌ {errors}</span>}
+              {eta && <span className="text-white/40 text-xs">~{eta}</span>}
             </div>
-            <span className="text-white font-bold">{total} קבצים</span>
+            <span className="text-white font-bold shrink-0 ml-2">
+              {isRunning ? `${finishedCount}/${total}` : `${total} קבצים`}
+            </span>
           </div>
 
           {/* Overall progress bar */}
           {isRunning && (
-            <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-blue-400 rounded-full transition-all duration-300"
-                style={{ width: `${overallPct}%` }}
-              />
+            <div>
+              <div className="h-2.5 bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-400 rounded-full transition-all duration-300"
+                  style={{ width: `${overallPct}%` }}
+                />
+              </div>
+              <div className="flex justify-between mt-1 text-white/30 text-xs">
+                <span>{overallPct}%</span>
+                <span>{CONCURRENCY_UPLOAD} העלאות במקביל</span>
+              </div>
             </div>
           )}
 
-          {/* Active uploads (only show uploading + error items) */}
+          {/* Active uploads */}
           {visibleItems.length > 0 && (
             <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
               {visibleItems.map(item => (
@@ -496,9 +590,7 @@ export default function UploadZone({ trip, onUploaded }: Props) {
                     )}
                   </div>
                   <span className="shrink-0 text-sm">
-                    {item.status === 'uploading' && (
-                      <span className="text-white/50 text-xs">{item.progress}%</span>
-                    )}
+                    {item.status === 'uploading' && <span className="text-white/50 text-xs">{item.progress}%</span>}
                     {item.status === 'error' && (
                       <button onClick={() => removeItem(item.id)} className="text-white/30 hover:text-white/60 text-xs">✕</button>
                     )}
@@ -509,9 +601,9 @@ export default function UploadZone({ trip, onUploaded }: Props) {
           )}
 
           {/* Clear done */}
-          {done > 0 && !isRunning && (
+          {finishedCount > 0 && !isRunning && (
             <button onClick={clearDone} className="text-xs text-white/30 hover:text-white/60 transition text-left">
-              נקה {done} שהועלו ✓
+              נקה {finishedCount} שהסתיימו ✓
             </button>
           )}
         </div>
@@ -528,7 +620,7 @@ export default function UploadZone({ trip, onUploaded }: Props) {
           {isRunning ? (
             <span className="flex items-center justify-center gap-2">
               <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
-              בודק כפילויות ומעלה... {done + duplicates}/{total} ({overallPct}%)
+              מעלה... {finishedCount}/{total} ({overallPct}%)
             </span>
           ) : errors > 0 ? (
             `נסה שוב ${errors} שנכשלו`
@@ -540,11 +632,11 @@ export default function UploadZone({ trip, onUploaded }: Props) {
 
       {/* ── All done ── */}
       {allFinished && (
-        <div className="text-center py-4 rounded-2xl" style={{ background: 'rgba(34,197,94,0.1)' }}>
+        <div className="text-center py-5 rounded-2xl" style={{ background: 'rgba(34,197,94,0.1)' }}>
           <div className="text-4xl mb-2">🎉</div>
-          <p className="text-white font-black">סיום!</p>
+          <p className="text-white font-black text-lg">סיום!</p>
           {done > 0 && <p className="text-green-400 text-sm mt-1">✅ {done} {done === 1 ? 'קובץ' : 'קבצים'} הועלו לאלבום</p>}
-          {duplicates > 0 && <p className="text-yellow-400 text-sm mt-0.5">⚠️ {duplicates} {duplicates === 1 ? 'קובץ' : 'קבצים'} כבר קיימים — לא הועלו שוב</p>}
+          {duplicates > 0 && <p className="text-yellow-400 text-sm mt-0.5">⚠️ {duplicates} כבר קיימים — לא הועלו שוב</p>}
         </div>
       )}
     </div>
@@ -554,31 +646,22 @@ export default function UploadZone({ trip, onUploaded }: Props) {
 // ── Helpers ────────────────────────────────────────────────────────
 
 function fetchWithTimeout(url: string, opts: RequestInit, ms: number): Promise<Response> {
-  const ctrl = new AbortController()
+  const ctrl  = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), ms)
   return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(timer))
 }
 
 function xhrUpload(
-  url: string,
-  file: File,
-  mimeType: string,
+  url: string, file: File, mimeType: string,
   onProgress: (pct: number) => void
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.timeout = XHR_TIMEOUT_MS
-
-    xhr.upload.onprogress = e => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
-    }
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve()
-      else reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`))
-    }
-    xhr.onerror   = () => reject(new Error('Network error during upload'))
-    xhr.ontimeout = () => reject(new Error('Upload timed out'))
-
+    xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)) }
+    xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error(`Upload failed: ${xhr.status}`)) }
+    xhr.onerror   = () => reject(new Error('Network error'))
+    xhr.ontimeout = () => reject(new Error('Timeout'))
     xhr.open('PUT', url)
     xhr.setRequestHeader('Content-Type', mimeType)
     xhr.send(file)

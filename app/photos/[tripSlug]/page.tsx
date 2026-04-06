@@ -119,6 +119,14 @@ export default function TripGalleryPage() {
               {viewerName ? FAMILY_MEMBERS.find(m => m.name === viewerName)?.hebrewName : 'מי אני?'}
             </button>
             <button
+              onClick={() => router.push(`/photos/${tripSlug}/print`)}
+              className="w-9 h-9 flex items-center justify-center rounded-full text-white text-base"
+              style={{ background: 'rgba(255,255,255,0.12)' }}
+              title="הורד / הדפס אלבום"
+            >
+              🖨️
+            </button>
+            <button
               onClick={() => router.push(`/photos/${tripSlug}/upload`)}
               className="w-9 h-9 flex items-center justify-center rounded-full text-white text-lg"
               style={{ background: 'rgba(37,99,235,0.5)' }}
