@@ -158,6 +158,25 @@ export async function findByHash(
     }
   }
 
+  // 1b. Same uploader + same taken_at second — extremely reliable iOS dedup.
+  //     iPhone preserves EXIF timestamp through HEIC→JPEG re-encoding, so two uploads
+  //     of the same photo by the same person will always have the same capture second.
+  //     Different burst-mode photos have different filenames (IMG_5001 vs IMG_5002)
+  //     so they pass through correctly — the filename check above filters them first.
+  if (uploader && takenAt) {
+    const ts = new Date(takenAt).toISOString().slice(0, 19) // second precision
+    const { data: byUploaderTs } = await supabase
+      .from('trip_media')
+      .select('*')
+      .eq('trip_id', tripId)
+      .eq('uploader', uploader)
+      .eq('status', 'ready')
+      .like('taken_at', `${ts}%`)
+      .limit(1)
+      .maybeSingle()
+    if (byUploaderTs) return byUploaderTs
+  }
+
   // 2. Exact hash — ready rows (definitive)
   const { data: byHashReady } = await supabase
     .from('trip_media')
@@ -196,8 +215,8 @@ export async function findByHash(
     if (byMeta) return byMeta
   }
 
-  // 5. Size alone, same day
-  if (fileSize && fileSize > 50_000 && takenAt) {
+  // 5. Size alone, same day (only for large files to avoid false positives)
+  if (fileSize && fileSize > 500_000 && takenAt) {
     const day = takenAt.slice(0, 10)
     const { data: bySize } = await supabase
       .from('trip_media')
@@ -211,8 +230,8 @@ export async function findByHash(
     if (bySize) return bySize
   }
 
-  // 6. Size + day + GPS (~1 km)
-  if (fileSize && fileSize > 50_000 && takenAt && latitude != null && longitude != null) {
+  // 6. Size + day + GPS (~1 km, only for large files)
+  if (fileSize && fileSize > 500_000 && takenAt && latitude != null && longitude != null) {
     const day = takenAt.slice(0, 10)
     const { data: byGps } = await supabase
       .from('trip_media')
@@ -269,6 +288,15 @@ export async function dedupTrip(tripId: string): Promise<{ removed: number; scan
       if (normName.length > 0) keys.push(`f::${row.uploader}::${normName}`)
     }
 
+    // Strategy 0b: same uploader + same taken_at second — extremely reliable.
+    // iPhone preserves EXIF timestamp through HEIC→JPEG re-encoding, so two
+    // uploads of the same photo by the same person land at the exact same second.
+    // Burst-mode photos are differentiated by filename (handled above first).
+    if (row.uploader && row.taken_at) {
+      const ts = new Date(row.taken_at as string).toISOString().slice(0, 19)
+      keys.push(`t::${row.uploader}::${ts}`)
+    }
+
     if (row.file_hash) {
       // Strategy 1: exact hash (most reliable)
       keys.push(`h::${row.file_hash}`)
@@ -279,7 +307,9 @@ export async function dedupTrip(tripId: string): Promise<{ removed: number; scan
       const ts = new Date(row.taken_at).toISOString().slice(0, 19)
       keys.push(`s::${row.file_size}::${ts}`)
 
-      if (row.file_size > 50_000) {
+      // Only use size-alone strategies for large files (>500 KB) to avoid
+      // false positives — two different small photos can easily be the same size.
+      if (row.file_size > 500_000) {
         const day = row.taken_at.slice(0, 10)
 
         // Strategy 3: size + day (catches re-uploads with different EXIF/upload time)

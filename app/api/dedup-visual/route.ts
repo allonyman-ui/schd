@@ -5,7 +5,9 @@ export const dynamic  = 'force-dynamic'
 export const maxDuration = 60   // pHash needs time for large galleries
 
 const HASH_SIZE  = 16    // 16×16 pixels
-const THRESHOLD  = 12    // Hamming distance < 12/256 = visually identical
+const THRESHOLD  = 20    // Hamming distance < 20/256 — catches HEIC→JPEG re-encodings
+                         // (same image, different compression = typically 3–15 bit diff)
+                         // Different images are almost always 40+ bits apart
 
 // ── Perceptual hash helpers ────────────────────────────────────────────────
 

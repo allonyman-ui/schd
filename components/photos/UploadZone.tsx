@@ -368,15 +368,25 @@ export default function UploadZone({ trip, onUploaded }: Props) {
 
     await Promise.all(Array.from({ length: CONCURRENCY_UPLOAD }, worker))
 
-    // Post-batch DB dedup scan
+    // Post-batch DB dedup scan — two passes
     let removedFromDb = 0
     try {
-      const r = await fetch('/api/dedup-media', {
+      // Pass 1: hash/size/filename dedup (fast, ~1s)
+      const r1 = await fetch('/api/dedup-media', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ trip_id: trip.id }),
       })
-      if (r.ok) { const d = await r.json(); removedFromDb = d.removed ?? 0 }
+      if (r1.ok) { const d = await r1.json(); removedFromDb += d.removed ?? 0 }
+    } catch { /* best-effort */ }
+    try {
+      // Pass 2: visual pHash dedup (catches HEIC re-encoding duplicates, ~10-20s)
+      const r2 = await fetch('/api/dedup-visual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trip_id: trip.id }),
+      })
+      if (r2.ok) { const d = await r2.json(); removedFromDb += d.removed ?? 0 }
     } catch { /* best-effort */ }
 
     setIsRunning(false)
