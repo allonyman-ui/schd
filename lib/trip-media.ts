@@ -125,7 +125,9 @@ export async function findByHash(
   tripId: string,
   fileHash: string,
   fileSize?: number,
-  takenAt?: string
+  takenAt?: string,
+  latitude?: number,
+  longitude?: number,
 ): Promise<TripMedia | null> {
   const supabase = createServiceClient()
 
@@ -186,14 +188,41 @@ export async function findByHash(
     if (bySize) return bySize
   }
 
+  // 5. Size + day + GPS (~1 km) — same photo uploaded by a different family member
+  //    (they were standing next to each other; same content, different uploader)
+  if (fileSize && fileSize > 50_000 && takenAt && latitude != null && longitude != null) {
+    const day    = takenAt.slice(0, 10)
+    const latMin = latitude  - 0.01
+    const latMax = latitude  + 0.01
+    const lonMin = longitude - 0.01
+    const lonMax = longitude + 0.01
+    const { data: byGps } = await supabase
+      .from('trip_media')
+      .select('*')
+      .eq('trip_id', tripId)
+      .eq('file_size', fileSize)
+      .eq('status', 'ready')
+      .like('taken_at', `${day}%`)
+      .gte('latitude',  latMin)
+      .lte('latitude',  latMax)
+      .gte('longitude', lonMin)
+      .lte('longitude', lonMax)
+      .limit(1)
+      .maybeSingle()
+    if (byGps) return byGps
+  }
+
   return null
 }
 
 // Scan a trip and soft-delete all duplicate rows.
 // Matching strategy (applied in priority order, most to least precise):
-//   1. file_hash          — exact content hash, 100% reliable
-//   2. file_size + taken_at (second precision) — old rows without hash, same timestamp
-//   3. file_size + taken_at (day precision)    — same file re-uploaded with different time metadata
+//   1. file_hash                         — exact content hash, 100% reliable
+//   2. file_size + taken_at (second)     — old rows without hash, same second
+//   3. file_size + taken_at (day)        — re-uploads with different timestamp metadata
+//   4. file_size + day + GPS (~1 km)     — same photo uploaded by different family members
+//      (two people at the same place took the exact same photo → different uploaders,
+//       same bytes → same size, same day, same GPS → duplicate)
 // Keeps the earliest created_at in each group. Returns { removed, scanned }.
 export async function dedupTrip(tripId: string): Promise<{ removed: number; scanned: number }> {
   const supabase = createServiceClient()
@@ -201,7 +230,7 @@ export async function dedupTrip(tripId: string): Promise<{ removed: number; scan
   // Include 'pending' rows so concurrent uploads are caught too
   const { data: allRows } = await supabase
     .from('trip_media')
-    .select('id, file_hash, file_size, taken_at, created_at, uploader')
+    .select('id, file_hash, file_size, taken_at, created_at, uploader, latitude, longitude')
     .eq('trip_id', tripId)
     .in('status', ['ready', 'pending'])
     .order('created_at', { ascending: true })
@@ -224,11 +253,20 @@ export async function dedupTrip(tripId: string): Promise<{ removed: number; scan
       const ts = new Date(row.taken_at).toISOString().slice(0, 19)
       keys.push(`s::${row.file_size}::${ts}`)
 
-      // Strategy 3: size + day (catches re-uploads with different EXIF/upload time)
-      // Only for files > 50 KB to avoid false-positives on tiny thumbnails
       if (row.file_size > 50_000) {
         const day = row.taken_at.slice(0, 10)
+
+        // Strategy 3: size + day (catches re-uploads with different EXIF/upload time)
         keys.push(`d::${row.file_size}::${day}`)
+
+        // Strategy 4: size + day + GPS rounded to ~1 km (2 decimal places ≈ 1.1 km)
+        // Catches the same photo uploaded by two different family members who were
+        // standing next to each other — same content, different uploader field.
+        if (row.latitude != null && row.longitude != null) {
+          const gLat = (row.latitude as number).toFixed(2)
+          const gLon = (row.longitude as number).toFixed(2)
+          keys.push(`g::${row.file_size}::${day}::${gLat}::${gLon}`)
+        }
       }
     }
 

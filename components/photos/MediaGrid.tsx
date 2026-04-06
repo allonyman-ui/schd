@@ -106,19 +106,23 @@ export default function MediaGrid({ items, onItemClick, onLoadMore, hasMore, loa
     <div>
       {groups.map(group => (
         <div key={group.key || 'no-date'} className="mb-6">
-          {/* ── Date header ── */}
-          <div className="flex items-center gap-2 px-1 py-2 mb-2">
-            <div className="flex flex-col min-w-0">
-              <span className="text-white font-bold text-sm leading-tight">{group.label}</span>
+          {/* ── Date + location header ── */}
+          <div className="flex items-start gap-3 px-1 pt-3 pb-2 mb-1">
+            <div className="flex flex-col min-w-0 flex-1">
+              <span className="text-white font-black text-sm leading-tight">{group.label}</span>
               {group.location && (
-                <span className="text-white/50 text-xs flex items-center gap-1 mt-0.5">
-                  <span>📍</span>
-                  <span className="truncate">{group.location}</span>
+                <span className="inline-flex items-center gap-1 mt-1.5 self-start">
+                  <span
+                    className="text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5"
+                    style={{ background: 'rgba(59,130,246,0.2)', color: '#93c5fd', border: '1px solid rgba(59,130,246,0.25)' }}
+                  >
+                    <span>📍</span>
+                    <span>{group.location}</span>
+                  </span>
                 </span>
               )}
             </div>
-            <div className="flex-1 h-px bg-white/10 ml-1" />
-            <span className="text-white/30 text-xs shrink-0">{group.items.length}</span>
+            <span className="text-white/25 text-xs shrink-0 mt-0.5">{group.items.length}</span>
           </div>
 
           {/* ── Masonry grid ── */}

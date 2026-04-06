@@ -105,19 +105,26 @@ export default function UploadZone({ trip, onUploaded }: Props) {
   }
 
   // ── Geocode with dedup cache ───────────────────────────────────────
+  // zoom=10 gives city-level precision (avoids sub-district names like "1η Κοινότητα Αθηνών")
+  // City-first strategy: prefer city/town over sub-district for readability
   function geocode(lat: number, lon: number): Promise<string | null> {
     const key = `${lat.toFixed(2)},${lon.toFixed(2)}`
     if (!geocacheRef.current.has(key)) {
       geocacheRef.current.set(key, (async () => {
         try {
           const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=he`,
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=he&zoom=10`,
             { headers: { 'User-Agent': 'allony-family-app/1.0' } }
           )
           if (!res.ok) return null
           const d = await res.json()
           const a = d.address ?? {}
-          return a.city ?? a.town ?? a.village ?? a.suburb ?? a.county ?? a.country ?? null
+          // Always prefer city/town (most recognisable), fall back to county/country
+          const city    = a.city ?? a.town ?? a.village ?? a.municipality ?? ''
+          const country = a.country ?? ''
+          if (city && country) return `${city}, ${country}`
+          if (city) return city
+          return a.county ?? a.state ?? country ?? null
         } catch { return null }
       })())
     }

@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     // ── Duplicate check ───────────────────────────────────────────────────────────
     if (file_hash) {
-      const existing = await findByHash(trip_id, file_hash, file_size, taken_at)
+      const existing = await findByHash(trip_id, file_hash, file_size, taken_at, latitude, longitude)
       if (existing) {
         return NextResponse.json({
           duplicate:    true,
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
       if (code === PG_UNIQUE_VIOLATION) {
         console.info('[presign] unique constraint caught race-condition dupe, hash:', file_hash?.slice(0, 12))
         // Find the winning row so we can return its id/url
-        const existing = await findByHash(trip_id, file_hash, file_size, taken_at)
+        const existing = await findByHash(trip_id, file_hash, file_size, taken_at, latitude, longitude)
         return NextResponse.json({
           duplicate:    true,
           existing_url: existing?.public_url ?? null,
