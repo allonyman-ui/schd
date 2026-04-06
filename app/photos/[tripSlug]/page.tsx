@@ -91,13 +91,26 @@ export default function TripGalleryPage() {
     if (!trip || dedup.status === 'running') return
     setDedup({ status: 'running' })
     try {
-      const res = await fetch('/api/dedup-media', {
+      // Pass 1: hash / size / filename-based dedup (fast)
+      const res1 = await fetch('/api/dedup-media', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ trip_id: trip.id }),
       })
-      if (!res.ok) throw new Error(`שגיאה ${res.status}`)
-      const { removed, scanned } = await res.json()
+      if (!res1.ok) throw new Error(`שגיאה ${res1.status}`)
+      const pass1 = await res1.json()
+
+      // Pass 2: perceptual-hash visual dedup (catches HEIC re-encoding duplicates)
+      const res2 = await fetch('/api/dedup-visual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trip_id: trip.id }),
+      })
+      if (!res2.ok) throw new Error(`שגיאה ויזואלית ${res2.status}`)
+      const pass2 = await res2.json()
+
+      const removed = (pass1.removed ?? 0) + (pass2.removed ?? 0)
+      const scanned = pass2.scanned ?? pass1.scanned ?? 0
       setDedup({ status: 'done', removed, scanned })
 
       // Reload gallery if anything was removed
