@@ -24,6 +24,7 @@ export interface TripMedia {
   mime_type: string | null
   file_size: number | null
   file_hash: string | null
+  original_filename: string | null
   width: number | null
   height: number | null
   duration_sec: number | null
@@ -128,13 +129,36 @@ export async function findByHash(
   takenAt?: string,
   latitude?: number,
   longitude?: number,
+  uploader?: string,
+  originalFilename?: string,
 ): Promise<TripMedia | null> {
   const supabase = createServiceClient()
 
   // Cutoff: pending rows older than this are orphans (upload failed), ignore them
   const orphanCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString()
 
-  // 1. Exact hash — ready rows (definitive)
+  // 1. Original filename + uploader — most reliable for iOS.
+  //    iPhone assigns the same name (IMG_XXXX.jpg) to the same photo even when
+  //    HEIC→JPEG conversion produces different bytes/hash each time.
+  //    Normalise: strip path, lowercase, strip extension for cross-format matching.
+  if (uploader && originalFilename) {
+    const normName = originalFilename.split('/').pop()!.toLowerCase().replace(/\.[^.]+$/, '')
+    if (normName.length > 0) {
+      const { data: byFilename } = await supabase
+        .from('trip_media')
+        .select('*')
+        .eq('trip_id', tripId)
+        .eq('uploader', uploader)
+        .in('status', ['ready', 'pending'])
+        .gte('created_at', '2000-01-01')  // all rows
+        .ilike('original_filename', `${normName}.%`)
+        .limit(1)
+        .maybeSingle()
+      if (byFilename) return byFilename
+    }
+  }
+
+  // 2. Exact hash — ready rows (definitive)
   const { data: byHashReady } = await supabase
     .from('trip_media')
     .select('*')
@@ -145,19 +169,19 @@ export async function findByHash(
     .maybeSingle()
   if (byHashReady) return byHashReady
 
-  // 2. Exact hash — recent pending rows (in-progress concurrent upload)
+  // 3. Exact hash — recent pending rows (in-progress concurrent upload)
   const { data: byHashPending } = await supabase
     .from('trip_media')
     .select('*')
     .eq('trip_id', tripId)
     .eq('file_hash', fileHash)
     .eq('status', 'pending')
-    .gte('created_at', orphanCutoff)   // only fresh pending rows
+    .gte('created_at', orphanCutoff)
     .limit(1)
     .maybeSingle()
   if (byHashPending) return byHashPending
 
-  // 3. Size + second-precision timestamp (catches rows without hash)
+  // 4. Size + second-precision timestamp
   if (fileSize && takenAt) {
     const ts = new Date(takenAt).toISOString().slice(0, 19)
     const { data: byMeta } = await supabase
@@ -172,8 +196,7 @@ export async function findByHash(
     if (byMeta) return byMeta
   }
 
-  // 4. Size alone, same day — catches re-uploads where taken_at changed
-  //    (old rows stored upload time; new upload has real EXIF capture time)
+  // 5. Size alone, same day
   if (fileSize && fileSize > 50_000 && takenAt) {
     const day = takenAt.slice(0, 10)
     const { data: bySize } = await supabase
@@ -188,14 +211,9 @@ export async function findByHash(
     if (bySize) return bySize
   }
 
-  // 5. Size + day + GPS (~1 km) — same photo uploaded by a different family member
-  //    (they were standing next to each other; same content, different uploader)
+  // 6. Size + day + GPS (~1 km)
   if (fileSize && fileSize > 50_000 && takenAt && latitude != null && longitude != null) {
-    const day    = takenAt.slice(0, 10)
-    const latMin = latitude  - 0.01
-    const latMax = latitude  + 0.01
-    const lonMin = longitude - 0.01
-    const lonMax = longitude + 0.01
+    const day = takenAt.slice(0, 10)
     const { data: byGps } = await supabase
       .from('trip_media')
       .select('*')
@@ -203,10 +221,10 @@ export async function findByHash(
       .eq('file_size', fileSize)
       .eq('status', 'ready')
       .like('taken_at', `${day}%`)
-      .gte('latitude',  latMin)
-      .lte('latitude',  latMax)
-      .gte('longitude', lonMin)
-      .lte('longitude', lonMax)
+      .gte('latitude',  latitude  - 0.01)
+      .lte('latitude',  latitude  + 0.01)
+      .gte('longitude', longitude - 0.01)
+      .lte('longitude', longitude + 0.01)
       .limit(1)
       .maybeSingle()
     if (byGps) return byGps
@@ -230,7 +248,7 @@ export async function dedupTrip(tripId: string): Promise<{ removed: number; scan
   // Include 'pending' rows so concurrent uploads are caught too
   const { data: allRows } = await supabase
     .from('trip_media')
-    .select('id, file_hash, file_size, taken_at, created_at, uploader, latitude, longitude')
+    .select('id, file_hash, file_size, taken_at, created_at, uploader, latitude, longitude, original_filename')
     .eq('trip_id', tripId)
     .in('status', ['ready', 'pending'])
     .order('created_at', { ascending: true })
@@ -242,6 +260,14 @@ export async function dedupTrip(tripId: string): Promise<{ removed: number; scan
 
   for (const row of allRows) {
     const keys: string[] = []
+
+    // Strategy 0: original filename + uploader — catches iOS HEIC→JPEG re-encoding
+    // Same photo on iPhone always has the same filename (IMG_XXXX.jpg) even when
+    // the HEIC→JPEG conversion produces different bytes on every upload session.
+    if (row.original_filename && row.uploader) {
+      const normName = (row.original_filename as string).split('/').pop()!.toLowerCase().replace(/\.[^.]+$/, '')
+      if (normName.length > 0) keys.push(`f::${row.uploader}::${normName}`)
+    }
 
     if (row.file_hash) {
       // Strategy 1: exact hash (most reliable)

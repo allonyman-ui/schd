@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       filename, content_type, file_size,
       taken_at, caption, width, height,
       latitude, longitude, location_name,
-      file_hash,
+      file_hash, original_filename,
     } = body
 
     if (!trip_id || !uploader || !filename) {
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     // ── Duplicate check ───────────────────────────────────────────────────────────
     if (file_hash) {
-      const existing = await findByHash(trip_id, file_hash, file_size, taken_at, latitude, longitude)
+      const existing = await findByHash(trip_id, file_hash, file_size, taken_at, latitude, longitude, uploader, original_filename ?? filename)
       if (existing) {
         return NextResponse.json({
           duplicate:    true,
@@ -72,8 +72,9 @@ export async function POST(request: NextRequest) {
         media_type:    mediaType,
         mime_type:     mimeType,
         file_size:     file_size     ?? null,
-        file_hash:     file_hash     ?? null,
-        width:         width         ?? null,
+        file_hash:         file_hash                   ?? null,
+        original_filename: (original_filename ?? filename ?? null),
+        width:             width                       ?? null,
         height:        height         ?? null,
         duration_sec:  null,
         caption:       caption       ?? null,
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest) {
       if (code === PG_UNIQUE_VIOLATION) {
         console.info('[presign] unique constraint caught race-condition dupe, hash:', file_hash?.slice(0, 12))
         // Find the winning row so we can return its id/url
-        const existing = await findByHash(trip_id, file_hash, file_size, taken_at, latitude, longitude)
+        const existing = await findByHash(trip_id, file_hash, file_size, taken_at, latitude, longitude, uploader, original_filename ?? filename)
         return NextResponse.json({
           duplicate:    true,
           existing_url: existing?.public_url ?? null,

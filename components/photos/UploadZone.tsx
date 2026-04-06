@@ -285,17 +285,18 @@ export default function UploadZone({ trip, onUploaded }: Props) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          trip_id:       trip.id,
-          trip_slug:     trip.slug,
-          uploader:      uploaderName,
-          filename:      file.name,
-          content_type:  mimeType,
-          file_size:     file.size,
-          file_hash:     fileHash,
-          taken_at:      takenAt,
+          trip_id:           trip.id,
+          trip_slug:         trip.slug,
+          uploader:          uploaderName,
+          filename:          file.name,
+          original_filename: file.name,   // original device filename — key iOS HEIC dedup signal
+          content_type:      mimeType,
+          file_size:         file.size,
+          file_hash:         fileHash,
+          taken_at:          takenAt,
           latitude,
           longitude,
-          location_name: locationName,
+          location_name:     locationName,
         }),
       }, 30_000)
 

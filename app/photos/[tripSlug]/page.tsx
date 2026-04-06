@@ -70,7 +70,17 @@ export default function TripGalleryPage() {
     const res  = await fetch(`/api/trip-media?${params}`)
     const data = await res.json()
 
-    setItems(prev => p === 1 ? data.items : [...prev, ...data.items])
+    setItems(prev => {
+      const merged = p === 1 ? data.items : [...prev, ...data.items]
+      // Safety-net dedup: ensure the same DB row never appears twice in the UI
+      // (guards against IntersectionObserver or StrictMode double-fires)
+      const seen = new Set<string>()
+      return merged.filter((it: TripMedia) => {
+        if (seen.has(it.id)) return false
+        seen.add(it.id)
+        return true
+      })
+    })
     setTotal(data.total)
     setLoading(false)
     setLoadingMore(false)

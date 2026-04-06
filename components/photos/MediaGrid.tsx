@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import type { TripMedia } from '@/lib/trip-media'
 import MediaThumbnail from './MediaThumbnail'
 
@@ -75,7 +75,21 @@ function groupByDay(items: TripMedia[]): DayGroup[] {
 // ── component ─────────────────────────────────────────────────────────────────
 
 export default function MediaGrid({ items, onItemClick, onLoadMore, hasMore, loading }: Props) {
-  const sentinelRef = useRef<HTMLDivElement>(null)
+  const sentinelRef  = useRef<HTMLDivElement>(null)
+  // Ref-based guard: prevents the IntersectionObserver from firing loadMore
+  // multiple times before React has re-rendered with the updated loading state
+  // (stale closure bug that caused the same page to be appended twice).
+  const firingRef    = useRef(false)
+  const onLoadMoreRef = useRef(onLoadMore)
+  useEffect(() => { onLoadMoreRef.current = onLoadMore }, [onLoadMore])
+
+  const handleIntersect = useCallback(() => {
+    if (firingRef.current || loading || !hasMore) return
+    firingRef.current = true
+    onLoadMoreRef.current?.()
+    // Reset after a short delay so rapid scroll doesn't re-trigger immediately
+    setTimeout(() => { firingRef.current = false }, 800)
+  }, [loading, hasMore])
 
   // Infinite scroll via IntersectionObserver
   useEffect(() => {
@@ -83,12 +97,12 @@ export default function MediaGrid({ items, onItemClick, onLoadMore, hasMore, loa
     const el = sentinelRef.current
     if (!el) return
     const observer = new IntersectionObserver(
-      entries => { if (entries[0].isIntersecting && !loading) onLoadMore() },
+      entries => { if (entries[0].isIntersecting) handleIntersect() },
       { threshold: 0.1 }
     )
     observer.observe(el)
     return () => observer.disconnect()
-  }, [onLoadMore, hasMore, loading])
+  }, [onLoadMore, hasMore, handleIntersect])
 
   if (!items.length && !loading) {
     return (
