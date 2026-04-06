@@ -8,7 +8,7 @@ import Lightbox from '@/components/photos/Lightbox'
 import PersonFilterBar from '@/components/photos/PersonFilterBar'
 import { FAMILY_MEMBERS } from '@/lib/types'
 
-const PAGE_SIZE = 30
+const PAGE_SIZE = 50
 
 type DedupState =
   | { status: 'idle' }
@@ -33,29 +33,45 @@ export default function TripGalleryPage() {
   const [showNamePicker,setShowNamePicker] = useState(false)
   const [dedup,        setDedup]         = useState<DedupState>({ status: 'idle' })
 
-  // ── Load trip ────────────────────────────────────────────────────
-  useEffect(() => {
-    fetch('/api/trips')
-      .then(r => r.json())
-      .then((trips: Trip[]) => setTrip(trips.find(t => t.slug === tripSlug) ?? null))
-  }, [tripSlug])
-
-  // ── Load media ───────────────────────────────────────────────────
+  // ── Load trip + first page together (single fetch on mount) ─────
   useEffect(() => {
     setLoading(true)
     setPage(1)
     setItems([])
+    // Fetch trip and pass it straight to loadPage so the first media
+    // load doesn't trigger a redundant /api/trips call.
+    fetch('/api/trips')
+      .then(r => r.json())
+      .then((trips: Trip[]) => {
+        const found = trips.find((t: Trip) => t.slug === tripSlug) ?? null
+        setTrip(found)
+        if (found) loadPage(1, uploader, mediaType, found)
+        else setLoading(false)
+      })
+  }, [tripSlug])
+
+  // ── Reload when filters change (trip already in state) ───────────
+  useEffect(() => {
+    if (!trip) return   // wait for initial trip load
+    setLoading(true)
+    setPage(1)
+    setItems([])
     loadPage(1, uploader, mediaType)
-  }, [tripSlug, uploader, mediaType])
+  }, [uploader, mediaType])
 
   async function loadPage(
     p: number,
     filterUploader: string | null,
-    filterMediaType: 'all' | 'photo' | 'video'
+    filterMediaType: 'all' | 'photo' | 'video',
+    tripOverride?: Trip,   // used on first load before state is set
   ) {
-    const tripsRes = await fetch('/api/trips')
-    const trips: Trip[] = await tripsRes.json()
-    const foundTrip = trips.find(t => t.slug === tripSlug)
+    // Use already-loaded trip from state (avoids re-fetching on every scroll trigger).
+    // On first call trip state is null, so fall back to fetching once.
+    const foundTrip = tripOverride ?? trip ?? await (async () => {
+      const r = await fetch('/api/trips')
+      const trips: Trip[] = await r.json()
+      return trips.find(t => t.slug === tripSlug) ?? null
+    })()
     if (!foundTrip) { setLoading(false); return }
     if (!trip) setTrip(foundTrip)
 

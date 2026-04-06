@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { TripMedia } from '@/lib/trip-media'
+import { getThumbnailUrl } from '@/lib/trip-media'
 import { FAMILY_MEMBERS } from '@/lib/types'
 
 interface Props {
@@ -226,10 +227,28 @@ export default function Lightbox({ items, initialIndex, viewerName, onClose, onR
       {/* ── Media ── */}
       <div className="flex-1 flex items-center justify-center relative overflow-hidden min-h-0">
         {item.media_type === 'photo' ? (
-          <img key={item.id} src={item.public_url} alt={item.caption ?? ''} className="max-w-full max-h-full object-contain select-none" draggable={false} />
+          // Load full-res for current photo only; this prevents OOM crashes on
+          // mobile Safari when the user swipes quickly through many large photos.
+          // We use the `key` to force a fresh element (and network request) each
+          // time the index changes, so the old image is garbage-collected.
+          <img
+            key={item.id}
+            src={item.public_url}
+            alt={item.caption ?? ''}
+            className="max-w-full max-h-full object-contain select-none"
+            draggable={false}
+          />
         ) : (
           <video key={item.id} ref={videoRef} src={item.public_url} controls playsInline className="max-w-full max-h-full" style={{ outline: 'none' }} />
         )}
+
+        {/* Pre-load adjacent photos as lightweight thumbnails so swiping feels instant.
+            These are 800 px thumbnails (not full-res) — fast to load, low memory. */}
+        {[index - 1, index + 1].map(i => {
+          const adj = items[i]
+          if (!adj || adj.media_type !== 'photo') return null
+          return <img key={`pre-${adj.id}`} src={getThumbnailUrl(adj.public_url, 800)} alt="" className="hidden" aria-hidden />
+        })}
 
         {/* Desktop arrows */}
         {index > 0 && (

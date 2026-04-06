@@ -14,8 +14,9 @@ export default function MediaThumbnail({ media, onClick }: Props) {
   const [imgError, setImgError] = useState(false)
   const member = FAMILY_MEMBERS.find(m => m.name === media.uploader)
 
+  // 400 px is plenty for a masonry grid — much less data than 600 px
   const thumb = media.media_type === 'photo' && !imgError
-    ? getThumbnailUrl(media.public_url, 600)
+    ? getThumbnailUrl(media.public_url, 400)
     : null
 
   const timeStr = media.taken_at
@@ -42,7 +43,7 @@ export default function MediaThumbnail({ media, onClick }: Props) {
           <video
             src={media.public_url}
             className="w-full h-full object-cover"
-            preload="metadata"
+            preload="none"
             muted
             playsInline
           />
